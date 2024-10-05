@@ -6,7 +6,7 @@ import numpy as np
 import plotly.express as px
 
 section_dir = Path(__file__).resolve().parent
-exercises_dir = section_dir.parent
+exercises_dir = section_dir
 if str(exercises_dir) not in sys.path:
     sys.path.append(str(exercises_dir))
 
@@ -40,7 +40,7 @@ def display_array_as_img(img_array):
     fig.show(config=dict(displayModeBar=False))
 
 
-arr = np.load(section_dir / "numbers.npy")
+arr = np.load(exercises_dir / "assets" / "numbers.npy")
 
 arr1_soln = einops.rearrange(arr, "b c h w -> c h (b w)")
 arr2_soln = einops.repeat(arr[0], "c h w -> c (2 h) w")
