@@ -32,7 +32,10 @@ def display_array_as_img(img_array):
     fig.update_xaxes(showticklabels=False)
     fig.update_yaxes(showticklabels=False)
     fig.update_layout(
-        coloraxis_showscale=False, margin=dict.fromkeys("tblr", 0), height=height, width=width
+        coloraxis_showscale=False,
+        margin=dict.fromkeys("tblr", 0),
+        height=height,
+        width=width,
     )
     fig.show(config=dict(displayModeBar=False))
 

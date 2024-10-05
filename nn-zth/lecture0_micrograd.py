@@ -450,11 +450,11 @@ n.layers[0].neurons[0].w[0].data
 # Now we can do a full training loop:
 n = MLP(3, [4, 4, 1])
 for k in range(3000):
-    # forward:pass 
+    # forward:pass
     y_predictions = [n(x) for x in xs]
 
     # compute loss
-    loss = sum((y_pred - y)**2 for y_pred, y in zip(y_predictions, ys))
+    loss = sum((y_pred - y) ** 2 for y_pred, y in zip(y_predictions, ys))
     print(f"k: {k}, loss: {loss.data}")
 
     for p in n.parameters():
