@@ -4,7 +4,6 @@
 # %%
 
 import math
-from cycler import V
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -63,6 +62,9 @@ class Value:
 
         out._backward = _backward
         return out
+
+    def __radd__(self, other):  # other + self
+        return self + other
 
     def __sub__(self, other):
         return self + (other * -1)
@@ -324,13 +326,125 @@ o = torch.tanh(n)
 print(o.data.item())
 o.backward()
 
-print(w1.grad.item())
-print(w2.grad.item())
-print(x1.grad.item())
-print(x2.grad.item())
-print(b.grad.item())
+print("---")
+print("x2", x2.grad.item())
+print("w2", w2.grad.item())
+print("x1", x1.grad.item())
+print("w1", w1.grad.item())
 
 
 # %%
 torch.Tensor([2.0]).dtype
 # %%
+
+## Neural Networks
+# Let's build a simple neural network, using a simplified version
+# of the PyTorch API.
+
+# %%
+
+
+# %%
+import random
+
+
+class Neuron:
+    def __init__(self, nin):
+        self.w = [Value(random.uniform(-1, 1)) for _ in range(nin)]
+        self.b = Value(random.uniform(-1, 1))
+
+    def __call__(self, x):
+        assert len(x) == len(
+            self.w
+        ), "Length of x must be equal to the number of weights"
+        # w * x is a dot product
+        # we implement w * x+ b
+        out = sum((wi * xi for wi, xi in zip(self.w, x)), self.b)
+
+        out = out.tanh()
+        return out
+
+    def parameters(self):
+        return self.w + [self.b]
+
+
+x = [2.0, 3.0]
+n = Neuron(2)
+n(x)
+
+# %%
+
+
+class Layer:
+    def __init__(self, nin, nout):
+        self.neurons = [Neuron(nin) for _ in range(nout)]
+
+    def __call__(self, x):
+        result = [n(x) for n in self.neurons]
+        return result[0] if len(result) == 1 else result
+
+    def parameters(self):
+        return [p for neuron in self.neurons for p in neuron.parameters()]
+
+
+# %%
+x = [2.0, 3.0, -1.0]
+n = Layer(3, 3)
+
+n(x)
+
+# %%
+
+
+class MLP:
+    def __init__(self, nin, nouts):
+        layer_sizes = [nin] + nouts  # sizes for each layer
+        self.layers = [
+            Layer(layer_sizes[i], layer_sizes[i + 1]) for i in range(len(nouts))
+        ]
+
+    def __call__(self, x):
+        # This implements the forward pass
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+    def parameters(self):
+        return [p for layer in self.layers for p in layer.parameters()]
+
+
+# %%
+x = [2.0, 3.0, -1.0]
+n = MLP(3, [4, 4, 1])
+n(x)
+n.parameters()
+
+# %%
+# 4 inputs and 4 targets for the neural net:
+xs = [[2.0, 3.0, -1.0], [3.0, -1.0, 0.5], [0.5, 1.0, 1.0], [1.0, 1.0, -1.0]]
+ys = [1.0, -1.0, -1.0, 1.0]
+
+y_predictions = [n(x) for x in xs]
+y_predictions
+# %%
+# Compute the loss first:
+loss = sum((y_pred - y_true) ** 2 for y_pred, y_true in zip(y_predictions, ys))
+# loss
+loss
+# %%
+loss.backward()  # magic is happening here!
+# %%
+
+n.layers[0].neurons[0].w[0].grad
+# %%
+n.layers[0].neurons[0].w[0].data
+# %%
+# This is a single step of gradient descent:
+for p in n.parameters():
+    p.data += -0.01 * p.grad  # negative sign
+
+# %%
+n.layers[0].neurons[0].w[0].data
+
+# %%
+# Now we can do a full training loop:
