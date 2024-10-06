@@ -384,16 +384,17 @@ def raytrace_mesh(
     is_singular = t.linalg.det(Amat).abs() < 10e-12
     print(is_singular.sum())
 
-
     Amat[is_singular] = t.eye(3)
 
     Bmat = O - A
     solution_pts = t.linalg.solve(Amat, Bmat[:, 0, :])
     # print(solution_pts.shape, solution_pts[0])
     print(solution_pts[:, 0].unique())
-    intersecting_sols = (t.sum(solution_pts[:, 1:], dim=1) <= 1) & t.all(
-        solution_pts[:, 1:] > 0, dim=1
-    ) & ~is_singular
+    intersecting_sols = (
+        (t.sum(solution_pts[:, 1:], dim=1) <= 1)
+        & t.all(solution_pts[:, 1:] > 0, dim=1)
+        & ~is_singular
+    )
 
     print(solution_pts[:, 0].unique())
 
@@ -411,13 +412,14 @@ def raytrace_mesh(
     # print(rays_intersecting.shape, rays_intersecting)
     return rays_intersecting
 
+
 def raytrace_mesh_sol(
     rays: Float[Tensor, "nrays rayPoints=2 dims=3"],
-    triangles: Float[Tensor, "ntriangles trianglePoints=3 dims=3"]
+    triangles: Float[Tensor, "ntriangles trianglePoints=3 dims=3"],
 ) -> Float[Tensor, "nrays"]:
-    '''
+    """
     For each ray, return the distance to the closest intersecting triangle, or infinity.
-    '''
+    """
     # SOLUTION
     NR = rays.size(0)
     NT = triangles.size(0)
@@ -433,7 +435,7 @@ def raytrace_mesh_sol(
     assert O.shape == (NR, NT, 3)
 
     # Define matrix on left hand side of equation
-    mat: Float[Tensor, "NR NT 3 3"] = t.stack([- D, B - A, C - A], dim=-1)
+    mat: Float[Tensor, "NR NT 3 3"] = t.stack([-D, B - A, C - A], dim=-1)
     # Get boolean of where matrix is singular, and replace it with the identity in these positions
     dets: Float[Tensor, "NR NT"] = t.linalg.det(mat)
     is_singular = dets.abs() < 1e-8
@@ -448,8 +450,8 @@ def raytrace_mesh_sol(
     s, u, v = sol.unbind(-1)
 
     # Get boolean of intersects, and use it to set distance to infinity wherever there is no intersection
-    intersects = ((u >= 0) & (v >= 0) & (u + v <= 1) & ~is_singular)
-    s[~intersects] = float("inf") # t.inf
+    intersects = (u >= 0) & (v >= 0) & (u + v <= 1) & ~is_singular
+    s[~intersects] = float("inf")  # t.inf
 
     # Get the minimum distance (over all triangles) for each ray
     return s.min(dim=-1).values
