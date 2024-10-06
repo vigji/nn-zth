@@ -381,31 +381,78 @@ def raytrace_mesh(
     Amat = t.concat([-D, B - A, C - A], dim=1)
     Amat = ein.rearrange(Amat, "b p d -> b d p")
 
-    wrong_mats = t.linalg.det(Amat).abs() < 10e-12
+    is_singular = t.linalg.det(Amat).abs() < 10e-12
+    print(is_singular.sum())
 
-    Amat[wrong_mats] = ein.repeat(t.eye(3), "i j -> b i j", b=wrong_mats.sum())
+
+    Amat[is_singular] = t.eye(3)
 
     Bmat = O - A
     solution_pts = t.linalg.solve(Amat, Bmat[:, 0, :])
     # print(solution_pts.shape, solution_pts[0])
+    print(solution_pts[:, 0].unique())
     intersecting_sols = (t.sum(solution_pts[:, 1:], dim=1) <= 1) & t.all(
         solution_pts[:, 1:] > 0, dim=1
-    )
-    print(intersecting_sols.sum(), intersecting_sols.shape[0])
+    ) & ~is_singular
+
+    print(solution_pts[:, 0].unique())
 
     final_solution = t.full((n_rays * n_triangles,), t.inf)
     final_solution[intersecting_sols] = solution_pts[intersecting_sols, 0]
-
+    print(final_solution.unique())
     # final_solution[valid_mats][intersecting_sols] = solution_pts[intersecting_sols, 0]
     # print(final_solution.shape, solution_pts[:150, 0])
 
     # final_solution[valid_mats][all_intersecting] = t.inf
 
     rays_intersecting = ein.reduce(
-        final_solution, "(n_rays n_tr) -> n_rays", "min", n_tr=n_triangles
+        final_solution, "(n_tr n_rays) -> n_rays", "min", n_tr=n_triangles
     )
     # print(rays_intersecting.shape, rays_intersecting)
     return rays_intersecting
+
+def raytrace_mesh_sol(
+    rays: Float[Tensor, "nrays rayPoints=2 dims=3"],
+    triangles: Float[Tensor, "ntriangles trianglePoints=3 dims=3"]
+) -> Float[Tensor, "nrays"]:
+    '''
+    For each ray, return the distance to the closest intersecting triangle, or infinity.
+    '''
+    # SOLUTION
+    NR = rays.size(0)
+    NT = triangles.size(0)
+
+    # Each triangle is [[Ax, Ay, Az], [Bx, By, Bz], [Cx, Cy, Cz]]
+    triangles = einops.repeat(triangles, "NT pts dims -> pts NR NT dims", NR=NR)
+    A, B, C = triangles
+    assert A.shape == (NR, NT, 3)
+
+    # Each ray is [[Ox, Oy, Oz], [Dx, Dy, Dz]]
+    rays = einops.repeat(rays, "NR pts dims -> pts NR NT dims", NT=NT)
+    O, D = rays
+    assert O.shape == (NR, NT, 3)
+
+    # Define matrix on left hand side of equation
+    mat: Float[Tensor, "NR NT 3 3"] = t.stack([- D, B - A, C - A], dim=-1)
+    # Get boolean of where matrix is singular, and replace it with the identity in these positions
+    dets: Float[Tensor, "NR NT"] = t.linalg.det(mat)
+    is_singular = dets.abs() < 1e-8
+    mat[is_singular] = t.eye(3)
+    print(is_singular.sum())
+
+    # Define vector on the right hand side of equation
+    vec: Float[Tensor, "NR NT 3"] = O - A
+
+    # Solve eqns (note, s is the distance along ray)
+    sol: Float[Tensor, "NR NT 3"] = t.linalg.solve(mat, vec)
+    s, u, v = sol.unbind(-1)
+
+    # Get boolean of intersects, and use it to set distance to infinity wherever there is no intersection
+    intersects = ((u >= 0) & (v >= 0) & (u + v <= 1) & ~is_singular)
+    s[~intersects] = float("inf") # t.inf
+
+    # Get the minimum distance (over all triangles) for each ray
+    return s.min(dim=-1).values
 
 
 num_pixels_y = 120
@@ -415,8 +462,8 @@ y_limit = z_limit = 1
 rays = make_rays_2d(num_pixels_y, num_pixels_z, y_limit, z_limit)
 rays[:, 0] = t.tensor([-2, 0.0, 0.0])
 dists = raytrace_mesh(rays, triangles)
-render_lines_with_plotly(rays[::1000])
-dists.unique()
+# render_lines_with_plotly(rays[::1000])
+# dists.unique()
 
 # %%
 intersects = t.isfinite(dists).view(num_pixels_y, num_pixels_z)
