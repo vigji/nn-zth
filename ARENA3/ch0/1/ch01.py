@@ -229,9 +229,8 @@ def make_rays_2d(
     z_values = t.linspace(-z_limit, z_limit, num_pixels_z)
     rays[:, 1, 1] = ein.repeat(y_values, "n_y -> (n_z n_y)", n_z=num_pixels_z)
     rays[:, 1, 2] = ein.repeat(z_values, "n_z -> (n_z n_y)", n_y=num_pixels_y)
-    # t.linspace(-y_limit, y_limit, num_pixels, out=rays[:, 1, 1])
+
     rays[:, 1, 0] = 1
-    #  = 1
     return rays
 
 
@@ -297,6 +296,7 @@ triangle_ray_intersects(A, B, C, O, D)
 # %%
 
 
+@jaxtyped(typechecker=typechecked)
 def raytrace_triangle(
     rays: Float[Tensor, "nrays rayPoints=2 dims=3"],
     triangle: Float[Tensor, "trianglePoints=3 dims=3"],
@@ -304,13 +304,30 @@ def raytrace_triangle(
     """
     For each ray, return True if the triangle intersects that ray.
     """
-    pass
+    n_rays = rays.shape[0]
+
+    O = rays[:, :1, :]
+    D = rays[:, -1:, :]
+
+    A = einops.repeat(triangle[0, :], "d -> b 1 d", b=n_rays)
+    B = einops.repeat(triangle[1, :], "d -> b 1 d", b=n_rays)
+    C = einops.repeat(triangle[2, :], "d -> b 1 d", b=n_rays)
+
+    Amat = t.concat([-D, B - A, C - A], dim=1)
+    Amat = ein.rearrange(Amat, "b p d -> b d p")
+
+    Bmat = O - A
+    solution_pts = t.linalg.solve(Amat, Bmat[:, 0, :])
+
+    return (t.sum(solution_pts[:, 1:], dim=1) <= 1) & t.all(
+        solution_pts[:, 1:] > 0, dim=1
+    )
 
 
 A = t.tensor([1, 0.0, -0.5])
 B = t.tensor([1, -0.5, 0.0])
 C = t.tensor([1, 0.5, 0.5])
-num_pixels_y = num_pixels_z = 15
+num_pixels_y = num_pixels_z = 20
 y_limit = z_limit = 0.5
 
 # Plot triangle & rays
@@ -321,5 +338,98 @@ render_lines_with_plotly(rays2d, triangle_lines)
 
 # Calculate and display intersections
 intersects = raytrace_triangle(rays2d, test_triangle)
+
+# Calculate and display intersections
+from matplotlib import pyplot as plt
+
 img = intersects.reshape(num_pixels_y, num_pixels_z).int()
-imshow(img, origin="lower", width=600, title="Triangle (as intersected by rays)")
+plt.imshow(img, origin="lower")
+
+# %%
+# Multiple triangles:
+
+with open("pikachu.pt", "rb") as f:
+    triangles = t.load(f)
+# %%
+
+
+def raytrace_mesh(
+    rays: Float[Tensor, "nrays rayPoints=2 dims=3"],
+    triangles: Float[Tensor, "ntriangles trianglePoints=3 dims=3"],
+) -> Float[Tensor, "nrays"]:
+    """
+    For each ray, return the distance to the closest intersecting triangle, or infinity.
+    """
+    n_rays, n_triangles = rays.shape[0], triangles.shape[0]
+
+    repeated_rays = ein.repeat(rays, "b p d -> (n b) 1 p d", n=n_triangles)
+    repeated_triangles = ein.repeat(triangles, "b p d -> (b n) 1 p d", n=n_rays)
+
+    O = repeated_rays[:, :, 0, :]
+    D = repeated_rays[:, :, 0, :]
+
+    A = repeated_triangles[
+        :, :, 0, :
+    ]  # einops.repeat(triangle[0, :], "d -> b 1 d", b=n_rays)
+    B = repeated_triangles[
+        :, :, 1, :
+    ]  # einops.repeat(triangle[1, :], "d -> b 1 d", b=n_rays)
+    C = repeated_triangles[
+        :, :, 2, :
+    ]  # einops.repeat(triangle[2, :], "d -> b 1 d", b=n_rays)
+
+    Amat = t.concat([-D, B - A, C - A], dim=1)
+    Amat = ein.rearrange(Amat, "b p d -> b d p")
+
+    wrong_mats = t.linalg.det(Amat).abs() < 10e-12
+
+    Amat[wrong_mats] = ein.repeat(t.eye(3), "i j -> b i j", b=wrong_mats.sum())
+
+    Bmat = O - A
+    solution_pts = t.linalg.solve(Amat, Bmat[:, 0, :])
+    # print(solution_pts.shape, solution_pts[0])
+    intersecting_sols = (t.sum(solution_pts[:, 1:], dim=1) <= 1) & t.all(
+        solution_pts[:, 1:] > 0, dim=1
+    )
+    print(intersecting_sols.sum(), intersecting_sols.shape[0])
+
+    final_solution = t.full((n_rays * n_triangles,), t.inf)
+    final_solution[intersecting_sols] = solution_pts[intersecting_sols, 0]
+
+    # final_solution[valid_mats][intersecting_sols] = solution_pts[intersecting_sols, 0]
+    # print(final_solution.shape, solution_pts[:150, 0])
+
+    # final_solution[valid_mats][all_intersecting] = t.inf
+
+    rays_intersecting = ein.reduce(
+        final_solution, "(n_rays n_tr) -> n_rays", "min", n_tr=n_triangles
+    )
+    # print(rays_intersecting.shape, rays_intersecting)
+    return rays_intersecting
+
+
+num_pixels_y = 120
+num_pixels_z = 120
+y_limit = z_limit = 1
+
+rays = make_rays_2d(num_pixels_y, num_pixels_z, y_limit, z_limit)
+rays[:, 0] = t.tensor([-2, 0.0, 0.0])
+dists = raytrace_mesh(rays, triangles)
+render_lines_with_plotly(rays[::1000])
+dists.unique()
+
+# %%
+intersects = t.isfinite(dists).view(num_pixels_y, num_pixels_z)
+dists_square = dists.view(num_pixels_y, num_pixels_z)
+img = t.stack([intersects, dists_square], dim=0)
+# %%
+fig = px.imshow(
+    img, facet_col=0, origin="lower", color_continuous_scale="magma", width=1000
+)
+fig.update_layout(coloraxis_showscale=False)
+for i, text in enumerate(["Intersects", "Distance"]):
+    fig.layout.annotations[i]["text"] = text
+fig.show()
+# %%
+dists
+# %%
