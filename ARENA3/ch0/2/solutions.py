@@ -23,8 +23,8 @@ from tqdm.notebook import tqdm
 if str(exercises_dir := Path(__file__).parent.parent) not in sys.path:
     sys.path.append(str(exercises_dir))
 
-import part2_cnns.tests as tests
-from part2_cnns.utils import print_param_count
+import tests as tests
+from utils import print_param_count
 from plotly_utils import line
 
 section_dir = exercises_dir / "part2_cnns"

@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import einops as ein
+import einops
 import numpy as np
 import torch as t
 import torch.nn as nn
@@ -59,14 +59,14 @@ class Linear(nn.Module):
         super().__init__()
         kai_he_fact = 1 / (in_features**1 / 2)
 
-        self.biases = (
+        self.weight = nn.Parameter(
+            t.rand(out_features, in_features) * kai_he_fact * 2 - kai_he_fact
+        )
+
+        self.bias = (
             nn.Parameter(t.rand(out_features) * kai_he_fact * 2 - kai_he_fact)
             if bias
             else None
-        )
-
-        self.weights = nn.Parameter(
-            t.rand(out_features, in_features) * kai_he_fact * 2 - kai_he_fact
         )
 
     def forward(self, x: t.Tensor) -> t.Tensor:
@@ -74,13 +74,17 @@ class Linear(nn.Module):
         x: shape (*, in_features)
         Return: shape (*, out_features)
         """
-        out = t.einsum(self.weights, x, "ij, j -> i")
-        if self.biases:
+        print(self.weight.shape, x.shape)
+        if len(x.shape > 1):
+            out = einops.einsum(self.weight, x, "i j, b j -> b i")
+        # else:
+        #     out = einops.einsum(self.weight, x, "i j, b j -> b i")
+        if self.bias is not None:
             out += self.bias
         return out
 
     def extra_repr(self) -> str:
-        pass
+        return f"weights={self.weights}, biases={self.biases}, ..."
 
 
 tests.test_linear_parameters(Linear, bias=False)
@@ -89,9 +93,68 @@ tests.test_linear_forward(Linear, bias=False)
 tests.test_linear_forward(Linear, bias=True)
 
 # %%
-in_features = 9
-kaiming_he_factor = 1 / (in_features**1 / 2)
-print(kaiming_he_factor)
-biases = t.rand(1000) * kaiming_he_factor * 2 - kaiming_he_factor
-biases.min(), biases.max()
+# Flatten
+
+
+class Flatten(nn.Module):
+    def __init__(self, start_dim: int = 1, end_dim: int = -1) -> None:
+        super().__init__()
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+
+    def forward(self, input: t.Tensor) -> t.Tensor:
+        """
+        Flatten out dimensions from start_dim to end_dim, inclusive of both.
+        """
+        end_dim = (
+            self.end_dim + 1
+            if self.end_dim > 0
+            else (len(input.shape) + self.end_dim + 1)
+        )
+
+        new_shape = [
+            -1,
+        ] * len(input.shape)
+        new_shape[: self.start_dim] = input.shape[: self.start_dim]
+        new_shape[end_dim:] = input.shape[end_dim:]
+
+        for i in range(len(new_shape) - 1, 0, -1):
+            if new_shape[i - 1] == -1 and new_shape[i] == -1:
+                new_shape.pop(i)
+
+        return input.reshape(new_shape)
+
+    def extra_repr(self) -> str:
+        return f"start_dim={self.start_dim}, end_dim={self.end_dim}, ..."
+
+
+tests.test_flatten(Flatten)
+
+
+# %%
+## Implement MLP
+class SimpleMLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        n_inputs = 28**2
+        n_hidden_units = 100
+        n_outputs = 10
+
+        self.flattener = Flatten(start_dim=1, end_dim=-1)
+        self.linear1 = Linear(n_inputs, n_hidden_units, bias=True)
+        self.linear2 = Linear(n_hidden_units, n_outputs, bias=True)
+
+        self.relu = ReLU()
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        flat_x = self.flattener(x)
+        hidden_activations = self.relu(self.linear1(flat_x))
+        final_activations = self.linear2(hidden_activations)
+
+        return final_activations
+
+
+tests.test_mlp_module(SimpleMLP)
+tests.test_mlp_forward(SimpleMLP)
 # %%
