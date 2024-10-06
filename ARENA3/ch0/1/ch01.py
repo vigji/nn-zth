@@ -20,7 +20,7 @@ import einops as ein
 
 
 def make_rays_1d(num_pixels: int, y_limit: float) -> t.Tensor:
-    '''
+    """
     num_pixels: The number of pixels in the y dimension. Since there is one ray per pixel, this is also the number of rays.
     y_limit: At x=1, the rays should extend from -y_limit to +y_limit, inclusive of both endpoints.
 
@@ -34,12 +34,13 @@ def make_rays_1d(num_pixels: int, y_limit: float) -> t.Tensor:
         [[0, 0, 0], [1, 0.75, 0]],
         [[0, 0, 0], [1, 1, 0]],
     ]
-    '''
+    """
     # SOLUTION
     rays = t.zeros((num_pixels, 2, 3), dtype=t.float32)
     t.linspace(-y_limit, y_limit, num_pixels, out=rays[:, 1, 1])
     rays[:, 1, 0] = 1
     return rays
+
 
 rays1d = make_rays_1d(9, 10.0)
 fig = render_lines_with_plotly(rays1d)
@@ -48,23 +49,28 @@ fig = render_lines_with_plotly(rays1d)
 fig = setup_widget_fig_ray()
 display(fig)
 
+
 @interact
 def response(seed=(0, 10, 1), v=(-2.0, 2.0, 0.01)):
     t.manual_seed(seed)
     L_1, L_2 = t.rand(2, 2)
     P = lambda v: L_1 + v * (L_2 - L_1)
     x, y = zip(P(-2), P(2))
-    with fig.batch_update(): 
-        fig.data[0].update({"x": x, "y": y}) 
-        fig.data[1].update({"x": [L_1[0], L_2[0]], "y": [L_1[1], L_2[1]]}) 
+    with fig.batch_update():
+        fig.data[0].update({"x": x, "y": y})
+        fig.data[1].update({"x": [L_1[0], L_2[0]], "y": [L_1[1], L_2[1]]})
         fig.data[2].update({"x": [P(v)[0]], "y": [P(v)[1]]})
+
+
 # %%
 
-segments = t.tensor([
-    [[1.0, -12.0, 0.0], [1, -6.0, 0.0]], 
-    [[0.5, 0.1, 0.0], [0.5, 1.15, 0.0]], 
-    [[2, 12.0, 0.0], [2, 21.0, 0.0]]
-])
+segments = t.tensor(
+    [
+        [[1.0, -12.0, 0.0], [1, -6.0, 0.0]],
+        [[0.5, 0.1, 0.0], [0.5, 1.15, 0.0]],
+        [[2, 12.0, 0.0], [2, 21.0, 0.0]],
+    ]
+)
 
 fig = render_lines_with_plotly(rays1d, segments)
 display(fig)
@@ -72,13 +78,14 @@ display(fig)
 # %%
 # My own solver:
 
+
 def intersect_ray_1d(ray: t.Tensor, segment: t.Tensor) -> bool:
-    '''
+    """
     ray: shape (n_points=2, n_dim=3)  # O, D points
     segment: shape (n_points=2, n_dim=3)  # L_1, L_2 points
 
     Return True if the ray intersects the segment.
-    '''
+    """
     ray = ray[..., :2]
     segment = segment[..., :2]
     O, D = ray
@@ -93,7 +100,8 @@ def intersect_ray_1d(ray: t.Tensor, segment: t.Tensor) -> bool:
         return False
 
     u, v = intersection[0].item(), intersection[1].item()
-    return  u >= 0 and 0 <= v <= 1
+    return u >= 0 and 0 <= v <= 1
+
 
 # YEEE
 tests.test_intersect_ray_1d(intersect_ray_1d)
@@ -109,23 +117,29 @@ from jaxtyping import Float, Int, Bool, Shaped, jaxtyped
 from typeguard import typechecked as typechecker
 from torch import Tensor
 
+
 @jaxtyped(typechecker=typechecker)
-def my_concat(x: Float[Tensor, "a1 b"], y: Float[Tensor, "a2 b"]) -> Float[Tensor, "a1+a2 b"]:
+def my_concat(
+    x: Float[Tensor, "a1 b"], y: Float[Tensor, "a2 b"]
+) -> Float[Tensor, "a1+a2 b"]:
     return t.concat([x, y], dim=0)
+
 
 x = t.ones(3, 2)
 print(x)
 y = t.randn(4, 2)
 z = my_concat(x, y)
+
+
 # %%
 @jaxtyped(typechecker=typechecker)
 def intersect_ray_1d(ray: Float[Tensor, "2 3"], segment: Float[Tensor, "2 3"]) -> bool:
-    '''
+    """
     ray: shape (n_points=2, n_dim=3)  # O, D points
     segment: shape (n_points=2, n_dim=3)  # L_1, L_2 points
 
     Return True if the ray intersects the segment.
-    '''
+    """
     ray = ray[..., :2]
     segment = segment[..., :2]
     O, D = ray
@@ -140,7 +154,8 @@ def intersect_ray_1d(ray: Float[Tensor, "2 3"], segment: Float[Tensor, "2 3"]) -
         return False
 
     u, v = intersection[0].item(), intersection[1].item()
-    return  u >= 0 and 0 <= v <= 1
+    return u >= 0 and 0 <= v <= 1
+
 
 tests.test_intersect_ray_1d(intersect_ray_1d)
 tests.test_intersect_ray_1d_special_case(intersect_ray_1d)
@@ -150,12 +165,14 @@ tests.test_intersect_ray_1d_special_case(intersect_ray_1d)
 x = t.randn(2, 3)
 ein.repeat(x, "a b -> a b c", c=12)
 
+
 # %%
-def intersect_rays_1d(rays: Float[Tensor, "nrays 2 3"], 
-                      segments: Float[Tensor, "nsegments 2 3"]) -> Bool[Tensor, "nrays"]:
-    '''
+def intersect_rays_1d(
+    rays: Float[Tensor, "nrays 2 3"], segments: Float[Tensor, "nsegments 2 3"]
+) -> Bool[Tensor, "nrays"]:
+    """
     For each ray, return True if it intersects any segment.
-    '''
+    """
     n_rays, n_segments = rays.shape[0], segments.shape[0]
     rays = rays[..., :2]
     segments = segments[..., :2]
@@ -174,20 +191,30 @@ def intersect_rays_1d(rays: Float[Tensor, "nrays 2 3"],
 
     valid_mats = t.linalg.det(A).abs() > 10e-12
     all_solutions = t.linalg.solve(A[valid_mats], B[valid_mats])
-    all_intersecting = (all_solutions[:, 0] > 0) & (all_solutions[:, 1] > 0) & (all_solutions[:, 1] <= 1)
-    
-    final_solution = t.full((n_rays*n_segments, ), False)
+    all_intersecting = (
+        (all_solutions[:, 0] > 0)
+        & (all_solutions[:, 1] > 0)
+        & (all_solutions[:, 1] <= 1)
+    )
+
+    final_solution = t.full((n_rays * n_segments,), False)
     final_solution[valid_mats] = all_intersecting
-    rays_intersecting = ein.reduce(final_solution, "(n_seg n_rays) -> n_rays", "any", n_seg=n_segments)
+    rays_intersecting = ein.reduce(
+        final_solution, "(n_seg n_rays) -> n_rays", "any", n_seg=n_segments
+    )
     return rays_intersecting
+
 
 tests.test_intersect_rays_1d(intersect_rays_1d)
 tests.test_intersect_rays_1d_special_case(intersect_rays_1d)
 
 # %%
 
-def make_rays_2d(num_pixels_y: int, num_pixels_z: int, y_limit: float, z_limit: float) -> Float[t.Tensor, "nrays 2 3"]:
-    '''
+
+def make_rays_2d(
+    num_pixels_y: int, num_pixels_z: int, y_limit: float, z_limit: float
+) -> Float[t.Tensor, "nrays 2 3"]:
+    """
     num_pixels_y: The number of pixels in the y dimension
     num_pixels_z: The number of pixels in the z dimension
 
@@ -195,9 +222,9 @@ def make_rays_2d(num_pixels_y: int, num_pixels_z: int, y_limit: float, z_limit: 
     z_limit: At x=1, the rays should extend from -z_limit to +z_limit, inclusive of both.
 
     Returns: shape (num_rays=num_pixels_y * num_pixels_z, num_points=2, num_dims=3).
-    '''
+    """
     # SOLUTION
-    rays = t.zeros((num_pixels_y*num_pixels_z, 2, 3), dtype=t.float32)
+    rays = t.zeros((num_pixels_y * num_pixels_z, 2, 3), dtype=t.float32)
     y_values = t.linspace(-y_limit, y_limit, num_pixels_y)
     z_values = t.linspace(-z_limit, z_limit, num_pixels_z)
     rays[:, 1, 1] = ein.repeat(y_values, "n_y -> (n_z n_y)", n_z=num_pixels_z)
@@ -206,6 +233,7 @@ def make_rays_2d(num_pixels_y: int, num_pixels_z: int, y_limit: float, z_limit: 
     rays[:, 1, 0] = 1
     #  = 1
     return rays
+
 
 # ein.repeat(t.arange(3), "n -> (3 n)")
 rays_2d = make_rays_2d(10, 10, 0.5, 0.3)
@@ -219,11 +247,79 @@ x, y, z = one_triangle.T
 
 fig = setup_widget_fig_triangle(x, y, z)
 
+
 @interact(u=(-0.5, 1.5, 0.01), v=(-0.5, 1.5, 0.01))
 def response(u=0.0, v=0.0):
     P = A + u * (B - A) + v * (C - A)
     fig.data[2].update({"x": [P[0]], "y": [P[1]]})
 
+
 display(fig)
 # %%
+Point = Float[Tensor, "points=3"]
+from typeguard import typechecked
 
+
+@jaxtyped(typechecker=typechecked)
+def triangle_ray_intersects(A: Point, B: Point, C: Point, O: Point, D: Point) -> bool:
+    """
+    A: shape (3,), one vertex of the triangle
+    B: shape (3,), second vertex of the triangle
+    C: shape (3,), third vertex of the triangle
+    O: shape (3,), origin point
+    D: shape (3,), direction point
+
+    Return True if the ray and the triangle intersect.
+    """
+
+    Amat = t.stack([-D, B - A, C - A], dim=1)
+    Bmat = O - A
+
+    try:
+        intersection = t.linalg.solve(Amat, Bmat)
+    except:
+        return False
+
+    result = (intersection[1:].sum() <= 1) and (intersection >= 0).all()
+    return result.item()
+
+
+tests.test_triangle_ray_intersects(triangle_ray_intersects)
+
+# %%
+A = t.tensor([0.5, -2.0, -2.0])
+B = t.tensor([0.5, -2.0, 2.0])
+C = t.tensor([0.5, 2.0, 2.0])
+O = t.zeros(3)
+D = t.zeros(3)
+D[0] = 1
+triangle_ray_intersects(A, B, C, O, D)
+# %%
+
+
+def raytrace_triangle(
+    rays: Float[Tensor, "nrays rayPoints=2 dims=3"],
+    triangle: Float[Tensor, "trianglePoints=3 dims=3"],
+) -> Bool[Tensor, "nrays"]:
+    """
+    For each ray, return True if the triangle intersects that ray.
+    """
+    pass
+
+
+A = t.tensor([1, 0.0, -0.5])
+B = t.tensor([1, -0.5, 0.0])
+C = t.tensor([1, 0.5, 0.5])
+num_pixels_y = num_pixels_z = 15
+y_limit = z_limit = 0.5
+
+# Plot triangle & rays
+test_triangle = t.stack([A, B, C], dim=0)
+rays2d = make_rays_2d(num_pixels_y, num_pixels_z, y_limit, z_limit)
+triangle_lines = t.stack([A, B, C, A, B, C], dim=0).reshape(-1, 2, 3)
+render_lines_with_plotly(rays2d, triangle_lines)
+
+# Calculate and display intersections
+intersects = raytrace_triangle(rays2d, test_triangle)
+img = intersects.reshape(num_pixels_y, num_pixels_z).int()
+imshow(img, origin="lower", width=600, title="Triangle (as intersected by rays)")

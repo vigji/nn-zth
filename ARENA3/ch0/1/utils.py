@@ -10,7 +10,9 @@ def render_lines_with_plotly(lines: t.Tensor, bold_lines: t.Tensor = t.Tensor())
 
     bold_lines: same shape as lines. If supplied, these lines will be rendered in black on top of the other lines.
     """
-    fig = go.Figure(layout=dict(showlegend=False, title="3D rays", height=600, width=600))
+    fig = go.Figure(
+        layout=dict(showlegend=False, title="3D rays", height=600, width=600)
+    )
     for line in lines:
         X, Y, Z = line.T
         fig.add_scatter3d(x=X, y=Y, z=Z, mode="lines")
@@ -25,7 +27,10 @@ def setup_widget_fig_ray() -> go.FigureWidget:
     fig.add_scatter(x=[], y=[], mode="markers", marker_size=12)
     fig.add_scatter(x=[], y=[], mode="markers", marker_size=12, marker_symbol="x")
     fig.update_layout(
-        showlegend=False, xaxis_range=[-1.5, 2.5], yaxis_range=[-1.5, 2.5], template="simple_white"
+        showlegend=False,
+        xaxis_range=[-1.5, 2.5],
+        yaxis_range=[-1.5, 2.5],
+        template="simple_white",
     )
     return fig
 

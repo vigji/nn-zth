@@ -74,6 +74,7 @@ if MAIN:
             fig.data[1].update({"x": [L_1[0], L_2[0]], "y": [L_1[1], L_2[1]]})  # type: ignore
             fig.data[2].update({"x": [P(v)[0]], "y": [P(v)[1]]})  # type: ignore
 
+
 # %%
 
 segments = t.tensor(
@@ -377,7 +378,9 @@ if MAIN:
     dists_square = dists.view(num_pixels_y, num_pixels_z)
     img = t.stack([intersects, dists_square], dim=0)
 
-    fig = px.imshow(img, facet_col=0, origin="lower", color_continuous_scale="magma", width=1000)
+    fig = px.imshow(
+        img, facet_col=0, origin="lower", color_continuous_scale="magma", width=1000
+    )
     fig.update_layout(coloraxis_showscale=False)
     for i, text in enumerate(["Intersects", "Distance"]):
         fig.layout.annotations[i]["text"] = text  # type: ignore
