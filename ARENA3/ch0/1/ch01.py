@@ -171,50 +171,59 @@ def intersect_rays_1d(rays: Float[Tensor, "nrays 2 3"],
     A = t.concat((D, L1 - L2), dim=1)
     A = ein.rearrange(A, "b p d -> b d p")
     B = (L1 - O)[:, 0, :]
-    all_solutions = t.linalg.solve(A, B)
-    all_valid = (all_solutions[:, 0] > 0) & (all_solutions[:, 1] > 0) & (all_solutions[:, 1] <= 1)
-    return ein.reduce(all_valid, "(n_seg n_rays) -> n_rays", "any", n_seg=n_segments)
 
+    valid_mats = t.linalg.det(A).abs() > 10e-12
+    all_solutions = t.linalg.solve(A[valid_mats], B[valid_mats])
+    all_intersecting = (all_solutions[:, 0] > 0) & (all_solutions[:, 1] > 0) & (all_solutions[:, 1] <= 1)
+    
+    final_solution = t.full((n_rays*n_segments, ), False)
+    final_solution[valid_mats] = all_intersecting
+    rays_intersecting = ein.reduce(final_solution, "(n_seg n_rays) -> n_rays", "any", n_seg=n_segments)
+    return rays_intersecting
 
 tests.test_intersect_rays_1d(intersect_rays_1d)
-# tests.test_intersect_rays_1d_special_case(intersect_rays_1d)
+tests.test_intersect_rays_1d_special_case(intersect_rays_1d)
 
 # %%
-ray = rays1d[0]
-segment = segments[0]
-ray = ray[..., :2]
-segment = segment[..., :2]
-O, D = ray
-L1, L2 = segment
 
-A = t.stack([D, L1 - L2]).T
-B = L1 - O
-print(A.shape, B.shape)
-t.linalg.solve(A, B)
-# %%
-rays = rays1d
-segments = segments
-n_rays, n_segments = rays.shape[0], segments.shape[0]
-rays = rays[..., :2]
-segments = segments[..., :2]
+def make_rays_2d(num_pixels_y: int, num_pixels_z: int, y_limit: float, z_limit: float) -> Float[t.Tensor, "nrays 2 3"]:
+    '''
+    num_pixels_y: The number of pixels in the y dimension
+    num_pixels_z: The number of pixels in the z dimension
 
-repeated_rays = ein.repeat(rays, "b p d -> (n b) p d", n=n_segments)
-repeated_segments = ein.repeat(segments, "b p d -> (b n) p d", n=n_rays)
+    y_limit: At x=1, the rays should extend from -y_limit to +y_limit, inclusive of both.
+    z_limit: At x=1, the rays should extend from -z_limit to +z_limit, inclusive of both.
 
-O = repeated_rays[:, :1]
-D = repeated_rays[:, -1:]
-L1 = repeated_segments[:, :1]
-L2 = repeated_segments[:, -1:]
+    Returns: shape (num_rays=num_pixels_y * num_pixels_z, num_points=2, num_dims=3).
+    '''
+    # SOLUTION
+    rays = t.zeros((num_pixels_y*num_pixels_z, 2, 3), dtype=t.float32)
+    y_values = t.linspace(-y_limit, y_limit, num_pixels_y)
+    z_values = t.linspace(-z_limit, z_limit, num_pixels_z)
+    rays[:, 1, 1] = ein.repeat(y_values, "n_y -> (n_z n_y)", n_z=num_pixels_z)
+    rays[:, 1, 2] = ein.repeat(z_values, "n_z -> (n_z n_y)", n_y=num_pixels_y)
+    # t.linspace(-y_limit, y_limit, num_pixels, out=rays[:, 1, 1])
+    rays[:, 1, 0] = 1
+    #  = 1
+    return rays
 
-A = t.concat((D, L1 - L2), dim=1)
-A = ein.rearrange(A, "b p d -> b d p")
-B = (L1 - O)[:, 0, :]
-all_solutions = t.linalg.solve(A, B)
-all_valid = (all_solutions[:, 0] >= 0) & (all_solutions[:, 1] >= 0) & (all_solutions[:, 1] >= 1)
-ein.reduce(all_valid, "(n_seg n_rays) -> n_seg", "any", n_rays=n_rays)
+# ein.repeat(t.arange(3), "n -> (3 n)")
+rays_2d = make_rays_2d(10, 10, 0.5, 0.3)
+render_lines_with_plotly(rays_2d)
 
 # %%
-repeated_rays.shape, repeated_segments.shape
+# Part 3: Triangles
+one_triangle = t.tensor([[0, 0, 0], [3, 0.5, 0], [2, 3, 0]])
+A, B, C = one_triangle
+x, y, z = one_triangle.T
+
+fig = setup_widget_fig_triangle(x, y, z)
+
+@interact(u=(-0.5, 1.5, 0.01), v=(-0.5, 1.5, 0.01))
+def response(u=0.0, v=0.0):
+    P = A + u * (B - A) + v * (C - A)
+    fig.data[2].update({"x": [P[0]], "y": [P[1]]})
+
+display(fig)
 # %%
 
-# %%
