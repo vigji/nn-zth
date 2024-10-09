@@ -5,6 +5,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+import math
 
 import einops
 import numpy as np
@@ -159,19 +160,27 @@ tests.test_mlp_forward(SimpleMLP)
 
 # Part 2: Training neural networks
 
-MNIST_TRANSFORM = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
+MNIST_TRANSFORM = transforms.Compose(
+    [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+)
+
 
 def get_mnist(subset: int = 1):
-    '''Returns MNIST training data, sampled by the frequency given in `subset`.'''
-    mnist_trainset = datasets.MNIST(root="./data", train=True, download=True, transform=MNIST_TRANSFORM)
-    mnist_testset = datasets.MNIST(root="./data", train=False, download=True, transform=MNIST_TRANSFORM)
+    """Returns MNIST training data, sampled by the frequency given in `subset`."""
+    mnist_trainset = datasets.MNIST(
+        root="./data", train=True, download=True, transform=MNIST_TRANSFORM
+    )
+    mnist_testset = datasets.MNIST(
+        root="./data", train=False, download=True, transform=MNIST_TRANSFORM
+    )
 
     if subset > 1:
-        mnist_trainset = Subset(mnist_trainset, indices=range(0, len(mnist_trainset), subset))
-        mnist_testset = Subset(mnist_testset, indices=range(0, len(mnist_testset), subset))
+        mnist_trainset = Subset(
+            mnist_trainset, indices=range(0, len(mnist_trainset), subset)
+        )
+        mnist_testset = Subset(
+            mnist_testset, indices=range(0, len(mnist_testset), subset)
+        )
 
     return mnist_trainset, mnist_testset
 
@@ -181,31 +190,38 @@ mnist_trainloader = DataLoader(mnist_trainset, batch_size=64, shuffle=True)
 mnist_testloader = DataLoader(mnist_testset, batch_size=64, shuffle=False)
 # %%
 mnist_trainloader
+
+
 # %%
 # Training loop: add test accuracy
 @dataclass
-class SimpleMLPTrainingArgs():
-    '''
-    Defining this class implicitly creates an __init__ method, which sets arguments as 
+class SimpleMLPTrainingArgs:
+    """
+    Defining this class implicitly creates an __init__ method, which sets arguments as
     given below, e.g. self.batch_size = 64. Any of these arguments can also be overridden
     when you create an instance, e.g. args = SimpleMLPTrainingArgs(batch_size=128).
-    '''
+    """
+
     batch_size: int = 64
-    epochs: int = 30
+    epochs: int = 3
     learning_rate: float = 1e-3
     subset: int = 10
 
 
 def train(args: SimpleMLPTrainingArgs):
-    '''
+    """
     Trains the model, using training parameters from the `args` object.
-    '''
+    """
     model = SimpleMLP().to(device)
 
     mnist_trainset, mnist_testset = get_mnist(subset=args.subset)
-    mnist_trainloader = DataLoader(mnist_trainset, batch_size=args.batch_size, shuffle=True)
-    mnist_testloader = DataLoader(mnist_testset, batch_size=args.batch_size, shuffle=False)
-    
+    mnist_trainloader = DataLoader(
+        mnist_trainset, batch_size=args.batch_size, shuffle=True
+    )
+    mnist_testloader = DataLoader(
+        mnist_testset, batch_size=args.batch_size, shuffle=False
+    )
+
     optimizer = t.optim.Adam(model.parameters(), lr=args.learning_rate)
     loss_list = []
     accuracies_list_test = []
@@ -219,7 +235,7 @@ def train(args: SimpleMLPTrainingArgs):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-            loss_list.append(loss.item())   
+            loss_list.append(loss.item())
 
         with t.inference_mode():
             all_preds = []
@@ -227,10 +243,12 @@ def train(args: SimpleMLPTrainingArgs):
                 imgs = imgs.to(device)
                 labels = labels.to(device)
                 logits = model(imgs)
-                
-                all_preds.append((logits.argmax(axis=1) == labels).sum() / labels.shape[0])
+
+                all_preds.append(
+                    (logits.argmax(axis=1) == labels).sum() / labels.shape[0]
+                )
                 # accuracy = (logits.argmax(axis=1) == labels) / len(labels)
-                #accuracies_list_test.append(accuracy)
+                # accuracies_list_test.append(accuracy)
             accuracies_list_test.append(sum(all_preds) / len(all_preds))
 
     line(
@@ -250,10 +268,95 @@ def train(args: SimpleMLPTrainingArgs):
         width=700,
     )
 
+    return np.array([t.cpu() for t in accuracies_list_test])
+
 
 args = SimpleMLPTrainingArgs()
-train(args)
-# %%
-accuracies_list_test.shape
+# Play with averaging:
+# accuracies_list_test_list = []
+# for i in range(30):
+#     accuracies_list_test_list.append(train(args))
+# accuracies_list_test_arr = np.array([t for t in accuracies_list_test_list])
+# accuracies_list_test_list_mn = np.nanmean(accuracies_list_test_arr, 0)
+# line(
+#     accuracies_list_test_list_mn,
+#     # yaxis_range=[0, max(loss_list) + 0.1],
+#     x=t.linspace(0, args.epochs, len(accuracies_list_test_list_mn)),
+#     labels={"x": "Num epochs", "y": "Epoch accuracy"},
+#     title="SimpleMLP training on MNIST",
+#     width=700,
+# )
 # %%
 # Convolutions
+
+
+class Conv2d(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        padding: int = 0,
+    ):
+        """
+        Same as torch.nn.Conv2d with bias=False.
+
+        Name your weight field `self.weight` for compatibility with the PyTorch version.
+        """
+        # Xavier initialization, from PyTorch implementation:
+        groups = 1  # we assume 1 group
+        k = groups / (in_channels * kernel_size**2)
+        super().__init__()
+        self.weight = nn.Parameter(
+            t.rand((out_channels, in_channels // groups, kernel_size, kernel_size))
+            * 2
+            * math.sqrt(k)
+            - math.sqrt(k)
+        )
+        self.stride = stride
+        self.padding = padding
+        self.kernel_size = kernel_size
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """Apply the functional conv2d, which you can import."""
+        return t.nn.functional.conv2d(
+            x, self.weight, stride=self.stride, padding=self.padding
+        )
+
+    def extra_repr(self) -> str:
+        return f"Conv2d layer (kernek_size={self.kernel_size}, stride={self.stride}, padding={self.padding})"
+
+
+# %%
+
+
+tests.test_conv2d_module(Conv2d)
+m = Conv2d(in_channels=24, out_channels=12, kernel_size=3, stride=2, padding=1)
+print(f"Manually verify that this is an informative repr: {m}")
+# %%
+
+
+class MaxPool2d(nn.Module):
+    def __init__(self, kernel_size: int, stride: int | None = None, padding: int = 1):
+        super().__init__()
+
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """Call the functional version of max_pool2d."""
+        return t.nn.functional.max_pool2d(
+            x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding
+        )
+
+    def extra_repr(self) -> str:
+        """Add additional information to the string representation of this class."""
+        return f"MaxPool2d layer (kernek_size={self.kernel_size}, stride={self.stride}, padding={self.padding})"
+
+
+tests.test_maxpool2d_module(MaxPool2d)
+m = MaxPool2d(kernel_size=3, stride=2, padding=1)
+print(f"Manually verify that this is an informative repr: {m}")
+# %%
