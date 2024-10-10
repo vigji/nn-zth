@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 import math
+from unicodedata import numeric
 
 import einops
 import numpy as np
@@ -359,4 +360,36 @@ class MaxPool2d(nn.Module):
 tests.test_maxpool2d_module(MaxPool2d)
 m = MaxPool2d(kernel_size=3, stride=2, padding=1)
 print(f"Manually verify that this is an informative repr: {m}")
+# %% ResNets
+from collections import OrderedDict
+
+class Sequential(nn.Module):
+    _modules: dict[str, nn.Module]
+
+    def __init__(self, *modules: nn.Module):
+        super().__init__()
+
+        if isinstance(modules, list):
+            for index, mod in enumerate(modules):
+                self._modules[str(index)] = mod
+        elif isinstance(modules, OrderedDict):
+            for key, val in modules.items():
+                self._modules[key] = val
+
+    def __getitem__(self, index: int | str) -> nn.Module:
+        if numeric(index):
+        index %= len(self._modules) # deal with negative indices
+        return self._modules[str(index)]
+
+    def __setitem__(self, index: int, module: nn.Module) -> None:
+        index %= len(self._modules) # deal with negative indices
+        self._modules[str(index)] = module
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        '''Chain each module together, with the output from one feeding into the next one.'''
+        for mod in self._modules.values():
+            x = mod(x)
+        return x
+# %%
+numeric()
 # %%
