@@ -377,13 +377,20 @@ class Sequential(nn.Module):
                 self._modules[key] = val
 
     def __getitem__(self, index: int | str) -> nn.Module:
-        if numeric(index):
-        index %= len(self._modules) # deal with negative indices
-        return self._modules[str(index)]
+        if isinstance(index, str):
+            return self._modules[index]
+        elif isinstance(index, int):
+            index %= len(self._modules) # deal with negative indices
+            return self._modules[str(index)]
+        else:
+            raise ValueError("Must be int or str")
 
-    def __setitem__(self, index: int, module: nn.Module) -> None:
-        index %= len(self._modules) # deal with negative indices
-        self._modules[str(index)] = module
+    def __setitem__(self, index: int | str, module: nn.Module) -> None:
+        if isinstance(index, int):
+            index %= len(self._modules)  # deal with negative indices
+            index = str(index)
+
+        self._modules[index] = module
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         '''Chain each module together, with the output from one feeding into the next one.'''
@@ -391,5 +398,5 @@ class Sequential(nn.Module):
             x = mod(x)
         return x
 # %%
-numeric()
+isinstance(1, numeric)
 # %%
