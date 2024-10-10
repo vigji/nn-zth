@@ -363,6 +363,7 @@ print(f"Manually verify that this is an informative repr: {m}")
 # %% ResNets
 from collections import OrderedDict
 
+
 class Sequential(nn.Module):
     _modules: dict[str, nn.Module]
 
@@ -380,7 +381,7 @@ class Sequential(nn.Module):
         if isinstance(index, str):
             return self._modules[index]
         elif isinstance(index, int):
-            index %= len(self._modules) # deal with negative indices
+            index %= len(self._modules)  # deal with negative indices
             return self._modules[str(index)]
         else:
             raise ValueError("Must be int or str")
@@ -393,10 +394,60 @@ class Sequential(nn.Module):
         self._modules[index] = module
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        '''Chain each module together, with the output from one feeding into the next one.'''
+        """Chain each module together, with the output from one feeding into the next one."""
         for mod in self._modules.values():
             x = mod(x)
         return x
+
+
 # %%
-isinstance(1, numeric)
-# %%
+
+
+class BatchNorm2d(nn.Module):
+    # The type hints below aren't functional, they're just for documentation
+    running_mean: Float[Tensor, "num_features"]
+    running_var: Float[Tensor, "num_features"]
+    num_batches_tracked: Int[Tensor, ""]  # This is how we denote a scalar tensor
+
+    def __init__(self, num_features: int, eps=1e-05, momentum=0.1):
+        """
+        Like nn.BatchNorm2d with track_running_stats=True and affine=True.
+
+        Name the learnable affine parameters `weight` and `bias` in that order.
+        """
+        super().__init__()
+
+        self.eps = eps
+        self.momentum = momentum
+
+        self.weight = nn.parameter(t.ones(1, num_features, 1, 1))
+        self.bias = nn.parameter(t.zeros(1, num_features, 1, 1))
+        pass
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """
+        Normalize each channel.
+
+        Compute the variance using `torch.var(x, unbiased=False)`
+        Hint: you may also find it helpful to use the argument `keepdim`.
+
+        x: shape (batch, channels, height, width)
+        Return: shape (batch, channels, height, width)
+        """
+        if self.training:
+            self.num_batches_tracked += 1
+
+            self.running_var = t.var(x, unbiased=True, keepdim=True)
+            self.running_mean = t.mean(x, keepdim=True)
+
+        return (
+            (x - self.running_mean) / t.sqrt(self.running_var + self.eps)
+        ) * self.weight + self.bias
+
+    def extra_repr(self) -> str:
+        return f"BarchNorm2d (weight={self.weight}; bias={self.bias})"
+
+
+tests.test_batchnorm2d_module(BatchNorm2d)
+tests.test_batchnorm2d_forward(BatchNorm2d)
+tests.test_batchnorm2d_running_mean(BatchNorm2d)
