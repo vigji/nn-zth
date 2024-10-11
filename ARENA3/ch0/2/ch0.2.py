@@ -439,39 +439,48 @@ class BatchNorm2d(nn.Module):
         if self.training:
             self.num_batches_tracked += 1
 
-            new_var = einops.repeat(
-                t.var(x, unbiased=True), " -> 1 d 1 1", d=self.num_features
-            )
-            new_mean = einops.repeat(t.mean(x), " -> 1 d 1 1", d=self.num_features)
+            var = t.var(x, dim=(0, 2, 3), unbiased=True, keepdim=True)
+            mean = t.mean(x, dim=(0, 2, 3), keepdim=True)
+
             running_var = (1 - self.momentum) * self.running_var[
                 t.newaxis, :, t.newaxis, t.newaxis
-            ] + self.momentum * new_var
+            ] + self.momentum * var
+
             running_mean = (1 - self.momentum) * self.running_mean[
                 t.newaxis, :, t.newaxis, t.newaxis
-            ] + self.momentum * new_mean
+            ] + self.momentum * mean
 
             self.running_var = t.squeeze(running_var)
             self.running_mean = t.squeeze(running_mean)
 
-        return (
-            (x - self.running_mean[t.newaxis, :, t.newaxis, t.newaxis])
-            / t.sqrt(self.running_var[t.newaxis, :, t.newaxis, t.newaxis] + self.eps)
-        ) * self.weight[t.newaxis, :, t.newaxis, t.newaxis] + self.bias[
-            t.newaxis, :, t.newaxis, t.newaxis
-        ]
+        else:
+            mean = einops.rearrange(self.running_mean, "ch -> 1 ch 1 1")
+            var = einops.rearrange(self.running_var, "ch -> 1 ch 1 1")
+
+        weight = einops.rearrange(self.weight, "ch -> 1 ch 1 1")
+        bias = einops.rearrange(self.bias, "ch -> 1 ch 1 1")
+
+        return ((x - mean) / t.sqrt(var + self.eps)) * weight + bias
 
     def extra_repr(self) -> str:
         return f"BarchNorm2d (weight={self.weight}; bias={self.bias})"
 
 
+# num_features = 2
+# input_var = 50
+# input_mean = 10
+# test_batchnorm = BatchNorm2d(num_features=num_features)
+# input_tensor = t.Tensor(t.randn((10, num_features, 3, 3))) * input_var + input_mean
+# for i in range(100):
+#     out_tensor = test_batchnorm(input_tensor)
+# print(out_tensor.mean(), out_tensor.var() ** (0.5), test_batchnorm.num_batches_tracked)
 num_features = 2
-input_var = 50
-input_mean = 10
-test_batchnorm = BatchNorm2d(num_features=num_features)
-input_tensor = t.Tensor(t.randn((10, num_features, 3, 3))) * input_var + input_mean
-for i in range(10):
-    out_tensor = test_batchnorm.forward(input_tensor)
-print(out_tensor.mean(), out_tensor.var() ** (0.5), test_batchnorm.num_batches_tracked)
+bn = BatchNorm2d(num_features)
+assert bn.training
+x = t.randn((100, num_features, 3, 4))
+out = bn(x)
+assert x.shape == out.shape
+t.testing.assert_close(out.mean(dim=(0, 2, 3)), t.zeros(num_features))
 
 # %%
 tests.test_batchnorm2d_module(BatchNorm2d)
