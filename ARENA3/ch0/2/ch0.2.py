@@ -28,9 +28,7 @@ from plotly_utils import line
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 # %%
 # Implement ReLU:
@@ -419,10 +417,14 @@ class BatchNorm2d(nn.Module):
 
         self.eps = eps
         self.momentum = momentum
+        self.num_features = num_features
 
-        self.weight = nn.parameter(t.ones(1, num_features, 1, 1))
-        self.bias = nn.parameter(t.zeros(1, num_features, 1, 1))
-        pass
+        self.weight = nn.Parameter(t.ones(num_features))
+        self.bias = nn.Parameter(t.zeros(num_features))
+
+        self.register_buffer("running_mean", t.zeros((num_features)))
+        self.register_buffer("running_var", t.ones((num_features)))
+        self.register_buffer("num_batches_tracked", t.zeros(()))
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         """
@@ -437,17 +439,45 @@ class BatchNorm2d(nn.Module):
         if self.training:
             self.num_batches_tracked += 1
 
-            self.running_var = t.var(x, unbiased=True, keepdim=True)
-            self.running_mean = t.mean(x, keepdim=True)
+            new_var = einops.repeat(
+                t.var(x, unbiased=True), " -> 1 d 1 1", d=self.num_features
+            )
+            new_mean = einops.repeat(t.mean(x), " -> 1 d 1 1", d=self.num_features)
+            running_var = (1 - self.momentum) * self.running_var[
+                t.newaxis, :, t.newaxis, t.newaxis
+            ] + self.momentum * new_var
+            running_mean = (1 - self.momentum) * self.running_mean[
+                t.newaxis, :, t.newaxis, t.newaxis
+            ] + self.momentum * new_mean
+
+            self.running_var = t.squeeze(running_var)
+            self.running_mean = t.squeeze(running_mean)
 
         return (
-            (x - self.running_mean) / t.sqrt(self.running_var + self.eps)
-        ) * self.weight + self.bias
+            (x - self.running_mean[t.newaxis, :, t.newaxis, t.newaxis])
+            / t.sqrt(self.running_var[t.newaxis, :, t.newaxis, t.newaxis] + self.eps)
+        ) * self.weight[t.newaxis, :, t.newaxis, t.newaxis] + self.bias[
+            t.newaxis, :, t.newaxis, t.newaxis
+        ]
 
     def extra_repr(self) -> str:
         return f"BarchNorm2d (weight={self.weight}; bias={self.bias})"
 
 
+num_features = 2
+input_var = 50
+input_mean = 10
+test_batchnorm = BatchNorm2d(num_features=num_features)
+input_tensor = t.Tensor(t.randn((10, num_features, 3, 3))) * input_var + input_mean
+for i in range(10):
+    out_tensor = test_batchnorm.forward(input_tensor)
+print(out_tensor.mean(), out_tensor.var() ** (0.5), test_batchnorm.num_batches_tracked)
+
+# %%
 tests.test_batchnorm2d_module(BatchNorm2d)
 tests.test_batchnorm2d_forward(BatchNorm2d)
 tests.test_batchnorm2d_running_mean(BatchNorm2d)
+
+# %%
+t.zeros((1, 2))[:, :, t.newaxis]
+# %%
