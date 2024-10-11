@@ -361,43 +361,28 @@ print(f"Manually verify that this is an informative repr: {m}")
 # %% ResNets
 from collections import OrderedDict
 
-
 class Sequential(nn.Module):
     _modules: dict[str, nn.Module]
 
     def __init__(self, *modules: nn.Module):
         super().__init__()
+        for index, mod in enumerate(modules):
+            self._modules[str(index)] = mod
 
-        if isinstance(modules, list):
-            for index, mod in enumerate(modules):
-                self._modules[str(index)] = mod
-        elif isinstance(modules, OrderedDict):
-            for key, val in modules.items():
-                self._modules[key] = val
+    def __getitem__(self, index: int) -> nn.Module:
+        index %= len(self._modules) # deal with negative indices
+        return self._modules[str(index)]
 
-    def __getitem__(self, index: int | str) -> nn.Module:
-        if isinstance(index, str):
-            return self._modules[index]
-        elif isinstance(index, int):
-            index %= len(self._modules)  # deal with negative indices
-            return self._modules[str(index)]
-        else:
-            raise ValueError("Must be int or str")
-
-    def __setitem__(self, index: int | str, module: nn.Module) -> None:
-        if isinstance(index, int):
-            index %= len(self._modules)  # deal with negative indices
-            index = str(index)
-
-        self._modules[index] = module
+    def __setitem__(self, index: int, module: nn.Module) -> None:
+        index %= len(self._modules) # deal with negative indices
+        self._modules[str(index)] = module
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        """Chain each module together, with the output from one feeding into the next one."""
+        '''Chain each module together, with the output from one feeding into the next one.'''
         for mod in self._modules.values():
             x = mod(x)
         return x
-
-
+    
 # %%
 
 
@@ -466,27 +451,333 @@ class BatchNorm2d(nn.Module):
         return f"BarchNorm2d (weight={self.weight}; bias={self.bias})"
 
 
-# num_features = 2
-# input_var = 50
-# input_mean = 10
-# test_batchnorm = BatchNorm2d(num_features=num_features)
-# input_tensor = t.Tensor(t.randn((10, num_features, 3, 3))) * input_var + input_mean
-# for i in range(100):
-#     out_tensor = test_batchnorm(input_tensor)
-# print(out_tensor.mean(), out_tensor.var() ** (0.5), test_batchnorm.num_batches_tracked)
-num_features = 2
-bn = BatchNorm2d(num_features)
-assert bn.training
-x = t.randn((100, num_features, 3, 4))
-out = bn(x)
-assert x.shape == out.shape
-t.testing.assert_close(out.mean(dim=(0, 2, 3)), t.zeros(num_features))
-
 # %%
 tests.test_batchnorm2d_module(BatchNorm2d)
 tests.test_batchnorm2d_forward(BatchNorm2d)
 tests.test_batchnorm2d_running_mean(BatchNorm2d)
 
+
 # %%
-t.zeros((1, 2))[:, :, t.newaxis]
+# AveragePool
+
+
+class AveragePool(nn.Module):
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """
+        x: shape (batch, channels, height, width)
+        Return: shape (batch, channels)
+        """
+        super().__init__()
+
+        return t.mean(x, dim=(2, 3))
+
+
+# %% ResNet implementation
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_feats: int, out_feats: int, first_stride=1):
+        """
+        A single residual block with optional downsampling.
+
+        For compatibility with the pretrained model, declare the left side branch first using a `Sequential`.
+
+        If first_stride is > 1, this means the optional (conv + bn) should be present on the right branch. Declare it second using another `Sequential`.
+        """
+        super().__init__()
+
+        self.left = Sequential(
+            Conv2d(
+                in_channels=in_feats,
+                out_channels=out_feats,
+                stride=first_stride,
+                kernel_size=3,
+                padding=1,
+            ),
+            BatchNorm2d(num_features=out_feats),
+            ReLU(),
+            Conv2d(
+                in_channels=out_feats,
+                out_channels=out_feats,
+                kernel_size=3,
+                padding=1,
+                stride=1,
+            ),
+            BatchNorm2d(num_features=out_feats),
+        )
+        if first_stride == 1 and in_feats == out_feats:
+            self.right = Sequential(nn.Identity())
+        else:
+            self.right = Sequential(
+                Conv2d(
+                    stride=first_stride, in_channels=in_feats, out_channels=out_feats,
+                    kernel_size=1,
+                ),
+                BatchNorm2d(num_features=out_feats),
+            )
+
+        self.relu = ReLU()
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """
+        Compute the forward pass.
+
+        x: shape (batch, in_feats, height, width)
+
+        Return: shape (batch, out_feats, height / stride, width / stride)
+
+        If no downsampling block is present, the addition should just add the left branch's output to the input.
+        """
+
+        return self.relu(self.left(x) + self.right(x))
+
+
+# %%
+class BlockGroup(nn.Module):
+    def __init__(self, n_blocks: int, in_feats: int, out_feats: int, first_stride=1):
+        """An n_blocks-long sequence of ResidualBlock where only the first block uses the provided stride."""
+        super().__init__()
+
+        block_list = [
+            ResidualBlock(
+                in_feats=in_feats, out_feats=out_feats, first_stride=first_stride
+            )
+        ]
+        for _ in range(n_blocks - 1):
+            block_list.append(
+                ResidualBlock(in_feats=out_feats, out_feats=out_feats, first_stride=1)
+            )
+
+        self.blocks = Sequential(*block_list)
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """
+        Compute the forward pass.
+
+        x: shape (batch, in_feats, height, width)
+
+        Return: shape (batch, out_feats, height / first_stride, width / first_stride)
+        """
+
+        return self.blocks(x)
+
+
+# %%
+
+
+class ResNet34(nn.Module):
+    def __init__(
+        self,
+        n_blocks_per_group=[3, 4, 6, 3],
+        out_features_per_group=[64, 128, 256, 512],
+        first_strides_per_group=[1, 2, 2, 2],
+        n_classes=1000,
+    ):
+
+        super().__init__()
+        img_ch = 3
+        in_feats0 = 64
+        kernel_size0 = 7
+
+        self.n_blocks_per_group = n_blocks_per_group
+        self.out_features_per_group = out_features_per_group
+        self.first_strides_per_group = first_strides_per_group
+        self.n_classes = n_classes
+
+        self.in_layers = Sequential(
+            Conv2d(
+                in_channels=img_ch,
+                out_channels=in_feats0,
+                kernel_size=kernel_size0,
+                padding=3,
+                stride=2,
+            ),
+            BatchNorm2d(num_features=64),
+            ReLU(),
+            MaxPool2d(kernel_size=3, stride=2),
+        )
+
+        block_list = []
+        in_feats = in_feats0
+        for n_blocks, out_features, first_stride in zip(
+            n_blocks_per_group, out_features_per_group, first_strides_per_group
+        ):
+            block_list.append(
+                BlockGroup(
+                    n_blocks=n_blocks, in_feats=in_feats, out_feats=out_features, first_stride=first_stride
+                )
+            )
+            in_feats = out_features
+        self.residual_layers = Sequential(*block_list)
+
+        self.out_layers = Sequential(
+            AveragePool(),
+            Linear(in_features=out_features_per_group[-1], out_features=n_classes),
+        )
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        """
+        x: shape (batch, channels, height, width)
+        Return: shape (batch, n_classes)
+        """
+        x = self.in_layers(x)
+        x = self.residual_layers(x)
+        x = self.out_layers(x)
+
+        return(x)
+
+
+my_resnet = ResNet34()
+
+# %%
+# Try to copy weights:
+
+
+def copy_weights(
+    my_resnet: ResNet34, pretrained_resnet: models.resnet.ResNet
+) -> ResNet34:
+    """Copy over the weights of `pretrained_resnet` to your resnet."""
+
+    # Get the state dictionaries for each model, check they have the same number of parameters & buffers
+    mydict = my_resnet.state_dict()
+    pretraineddict = pretrained_resnet.state_dict()
+    assert len(mydict) == len(pretraineddict), "Mismatching state dictionaries."
+
+    # Define a dictionary mapping the names of your parameters / buffers to their values in the pretrained model
+    state_dict_to_load = {
+        mykey: pretrainedvalue
+        for (mykey, myvalue), (pretrainedkey, pretrainedvalue) in zip(
+            mydict.items(), pretraineddict.items()
+        )
+    }
+
+    # Load in this dictionary to your model
+    my_resnet.load_state_dict(state_dict_to_load)
+
+    return my_resnet
+
+
+pretrained_resnet = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
+my_resnet = copy_weights(my_resnet, pretrained_resnet)
+
+print_param_count(pretrained_resnet, my_resnet)
+# %%
+
+IMAGE_FILENAMES = [
+    "chimpanzee.jpg",
+    "golden_retriever.jpg",
+    "platypus.jpg",
+    "frogs.jpg",
+    "fireworks.jpg",
+    "astronaut.jpg",
+    "iguana.jpg",
+    "volcano.jpg",
+    "goofy.jpg",
+    "dragonfly.jpg",
+]
+
+IMAGE_FOLDER = Path(__file__).parent / "resnet_inputs"
+
+images = [Image.open(IMAGE_FOLDER / filename) for filename in IMAGE_FILENAMES]
+# %%
+images[0]
+# %%
+IMAGE_SIZE = 224
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
+IMAGENET_TRANSFORM = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+])
+
+prepared_images = t.stack([IMAGENET_TRANSFORM(img) for img in images], dim=0)
+
+assert prepared_images.shape == (len(images), 3, IMAGE_SIZE, IMAGE_SIZE)
+
+# %%
+
+# %%
+# Predict sample dataset
+
+def predict(model, images: t.Tensor) -> t.Tensor:
+    '''
+    Returns the predicted class for each image (as a 1D array of ints).
+    '''
+    predictions = my_resnet(prepared_images)
+    return predictions.argmax(1)
+    # predicted_labels = [imagenet_labels[i] for i in best_predictions]
+    
+
+# %%
+with open(Path(__file__).parent / "imagenet_labels.json") as f:
+    imagenet_labels = list(json.load(f).values())
+imagenet_labels
+# %%
+# Check your predictions match those of the pretrained model
+my_predictions = predict(my_resnet, prepared_images)
+pretrained_predictions = predict(pretrained_resnet, prepared_images)
+assert all(my_predictions == pretrained_predictions)
+print("All predictions match!")
+
+# Print out your predictions, next to the corresponding images
+for img, label in zip(images, my_predictions):
+    print(f"Class {label}: {imagenet_labels[label]}")
+    display(img)
+    print()
+# %%
+# Aside: hooks
+class NanModule(nn.Module):
+    '''
+    Define a module that always returns NaNs (we will use hooks to identify this error).
+    '''
+    def forward(self, x):
+        return t.full_like(x, float('nan'))
+
+
+model = nn.Sequential(
+    nn.Identity(),
+    NanModule(),
+    nn.Identity()
+)
+
+
+def hook_check_for_nan_output(module: nn.Module, input: tuple[t.Tensor], output: t.Tensor) -> None:
+    '''
+    Hook function which detects when the output of a layer is NaN.
+    '''
+    if t.isnan(output).any():
+        raise ValueError(f"NaN output from {module}")
+
+
+def add_hook(module: nn.Module) -> None:
+    '''
+    Register our hook function in a module.
+
+    Use model.apply(add_hook) to recursively apply the hook to model and all submodules.
+    '''
+    module.register_forward_hook(hook_check_for_nan_output)
+
+
+def remove_hooks(module: nn.Module) -> None:
+    '''
+    Remove all hooks from module.
+
+    Use module.apply(remove_hooks) to do this recursively.
+    '''
+    module._backward_hooks.clear()
+    module._forward_hooks.clear()
+    module._forward_pre_hooks.clear()
+
+
+model = model.apply(add_hook)
+input = t.randn(3)
+
+try:
+    output = model(input)
+except ValueError as e:
+    print(e)
+
+model = model.apply(remove_hooks)
 # %%
