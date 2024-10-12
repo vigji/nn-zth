@@ -175,7 +175,6 @@ class SGD:
 tests.test_sgd(SGD)
 
 
-
 # %%
 # RMSprop
 class RMSprop:
@@ -359,8 +358,15 @@ class AdamW:
 tests.test_adamw(AdamW)
 # %%
 
+
 # %%
-def opt_fn(fn: Callable, xy: t.Tensor, optimizer_class, optimizer_hyperparams: dict, n_iters: int = 10):
+def opt_fn(
+    fn: Callable,
+    xy: t.Tensor,
+    optimizer_class,
+    optimizer_hyperparams: dict,
+    n_iters: int = 10,
+):
     """
     Optimize the a given function starting from the specified point.
 
@@ -387,6 +393,7 @@ def opt_fn(fn: Callable, xy: t.Tensor, optimizer_class, optimizer_hyperparams: d
 
     return xys
 
+
 # %%
 points = []
 
@@ -399,10 +406,17 @@ optimizer_list = [
 
 for optimizer_class, params in optimizer_list:
     xy = t.tensor([2.5, 2.5], requires_grad=True)
-    xys = opt_fn(pathological_curve_loss, xy=xy, optimizer_class=optimizer_class, optimizer_hyperparams=params)
+    xys = opt_fn(
+        pathological_curve_loss,
+        xy=xy,
+        optimizer_class=optimizer_class,
+        optimizer_hyperparams=params,
+    )
     points.append((xys, optimizer_class, params))
 
 plot_fn_with_points(pathological_curve_loss, points=points)
+
+
 # %%
 def bivariate_gaussian(x, y, x_mean=0.0, y_mean=0.0, x_sig=1.0, y_sig=1.0):
     norm = 1 / (2 * np.pi * x_sig * y_sig)
@@ -422,8 +436,10 @@ def rosenbrocks_banana_func(x: t.Tensor, y: t.Tensor, a=1, b=100) -> t.Tensor:
     return (a - x) ** 2 + b * (y - x**2) ** 2 + 1
 
 
-for fun, args in zip([neg_trimodal_func, rosenbrocks_banana_func], [dict(x_range=(-2, 2), y_range=(-2, 2)),
-                                                                    dict(x_range=(-2, 2), y_range=(-1, 3))]):
+for fun, args in zip(
+    [neg_trimodal_func, rosenbrocks_banana_func],
+    [dict(x_range=(-2, 2), y_range=(-2, 2)), dict(x_range=(-2, 2), y_range=(-1, 3))],
+):
     points = []
 
     optimizer_list = [
@@ -435,22 +451,25 @@ for fun, args in zip([neg_trimodal_func, rosenbrocks_banana_func], [dict(x_range
 
     for optimizer_class, params in optimizer_list:
         xy = t.tensor([2.5, 2.5], requires_grad=True)
-        xys = opt_fn(fun, xy=xy, optimizer_class=optimizer_class, optimizer_hyperparams=params)
+        xys = opt_fn(
+            fun, xy=xy, optimizer_class=optimizer_class, optimizer_hyperparams=params
+        )
         points.append((xys, optimizer_class, params))
 
     plot_fn_with_points(fun, points=points, **args)
+
+
 # %%
 # Rewrite SGD to accept params dicts
 class SGD:
-
     def __init__(self, params, **kwargs):
-        '''Implements SGD with momentum.
+        """Implements SGD with momentum.
 
         Accepts parameters in groups, or an iterable.
 
         Like the PyTorch version, but assume nesterov=False, maximize=False, and dampening=0
             https://pytorch.org/docs/stable/generated/torch.optim.SGD.html#torch.optim.SGD
-        '''
+        """
 
         if not isinstance(params, (list, tuple)):
             params = [{"params": params}]
@@ -462,13 +481,17 @@ class SGD:
 
         for param_group in params:
             param_group = {**default_param_values, **kwargs, **param_group}
-            assert "lr" in param_group, "Error: one of the parameter groups didn't specify a value for required parameter `lr`."
+            assert (
+                "lr" in param_group
+            ), "Error: one of the parameter groups didn't specify a value for required parameter `lr`."
             param_group["params"] = list(param_group["params"])
             param_group["gs"] = [t.zeros_like(p) for p in param_group["params"]]
             self.param_groups.append(param_group)
 
             for param in param_group["params"]:
-                assert param not in params_to_check_for_duplicates, "Error: some parameters appear in more than one parameter group"
+                assert (
+                    param not in params_to_check_for_duplicates
+                ), "Error: some parameters appear in more than one parameter group"
                 params_to_check_for_duplicates.add(param)
 
         self.t = 1
@@ -493,6 +516,7 @@ class SGD:
                 param_group["params"][j] -= gamma * new_g
                 self.param_groups[i]["gs"][j] = new_g
         self.t += 1
+
+
 # %%
 tests.test_sgd_param_groups(SGD)
-
