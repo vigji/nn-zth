@@ -8,7 +8,12 @@ from plotly.subplots import make_subplots
 
 
 def plot_fn(
-    fn: Callable, x_range=[-6, 6], y_range=[-10, 6], n_points=100, return_fig=False, log_scale=False
+    fn: Callable,
+    x_range=[-6, 6],
+    y_range=[-10, 6],
+    n_points=100,
+    return_fig=False,
+    log_scale=False,
 ):
     """Plot the specified function over the specified domain.
 
@@ -26,7 +31,10 @@ def plot_fn(
             specs=[[{"type": "scene"}, {"type": "xy"}]],
             rows=1,
             cols=2,
-            subplot_titles=["3D plot", "2D plot" if not log_scale else "2D plot (log scale)"],
+            subplot_titles=[
+                "3D plot",
+                "2D plot" if not log_scale else "2D plot (log scale)",
+            ],
         )
         .update_layout(
             height=500,
@@ -45,8 +53,12 @@ def plot_fn(
             colorscale="greys",
             hovertemplate="<b>x</b> = %{x:.2f}<br><b>y</b> = %{y:.2f}<br><b>z</b> = %{z:.2f}</b>",
             contours=dict(
-                x=dict(show=True, color="grey", start=x_range[0], end=x_range[1], size=0.2),
-                y=dict(show=True, color="grey", start=y_range[0], end=y_range[1], size=0.2),
+                x=dict(
+                    show=True, color="grey", start=x_range[0], end=x_range[1], size=0.2
+                ),
+                y=dict(
+                    show=True, color="grey", start=y_range[0], end=y_range[1], size=0.2
+                ),
             ),
         ),
         row=1,
@@ -74,7 +86,9 @@ def plot_fn(
 
 def format_name(name, params):
     name = f"{name}({', '.join([f'{k}={v}' for k, v in params.items()])})"
-    return name.replace("(", "<br>   ").replace(")", "").replace(", ", "<br>   ") + "<br>"
+    return (
+        name.replace("(", "<br>   ").replace(")", "").replace(", ", "<br>   ") + "<br>"
+    )
 
 
 def plot_fn_with_points(
@@ -96,7 +110,12 @@ def plot_fn_with_points(
         z = fn(x, y)
         fig.add_trace(  # type: ignore
             go.Scatter3d(
-                x=x, y=y, z=z, mode="lines", line=dict(width=6, color=color), showlegend=False
+                x=x,
+                y=y,
+                z=z,
+                mode="lines",
+                line=dict(width=6, color=color),
+                showlegend=False,
             ),
             row=1,
             col=1,

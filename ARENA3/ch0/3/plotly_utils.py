@@ -76,7 +76,9 @@ def imshow(tensor, renderer=None, **kwargs):
     if facet_labels:
         # Weird thing where facet col wrap means labels are in wrong order
         if "facet_col_wrap" in kwargs_pre:
-            facet_labels = reorder_list_in_plotly_way(facet_labels, kwargs_pre["facet_col_wrap"])
+            facet_labels = reorder_list_in_plotly_way(
+                facet_labels, kwargs_pre["facet_col_wrap"]
+            )
         for i, label in enumerate(facet_labels):
             fig.layout.annotations[i]["text"] = label
     fig.show(renderer=renderer)
@@ -123,7 +125,9 @@ def line(y: t.Tensor | list[t.Tensor], renderer=None, **kwargs):
         for k in ["title", "template", "width", "height"]:
             if k in kwargs_pre:
                 kwargs_post[k] = kwargs_pre.pop(k)
-        fig = make_subplots(specs=[[{"secondary_y": True}]]).update_layout(**kwargs_post)
+        fig = make_subplots(specs=[[{"secondary_y": True}]]).update_layout(
+            **kwargs_post
+        )
         y0 = to_numpy(y[0])
         y1 = to_numpy(y[1])
         x0, x1 = kwargs_pre.pop("x", [np.arange(len(y0)), np.arange(len(y1))])
@@ -134,7 +138,8 @@ def line(y: t.Tensor | list[t.Tensor], renderer=None, **kwargs):
     else:
         y = (
             list(map(to_numpy, y))
-            if isinstance(y, list) and not (isinstance(y[0], int) or isinstance(y[0], float))
+            if isinstance(y, list)
+            and not (isinstance(y[0], int) or isinstance(y[0], float))
             else to_numpy(y)
         )
         fig = px.line(y=y, **kwargs_pre).update_layout(**kwargs_post)
@@ -160,7 +165,9 @@ def scatter(x, y, renderer=None, **kwargs):
         yrange = fig.layout.yaxis.range or [y.min(), y.max()]
         add_line = add_line.replace(" ", "")
         if add_line in ["x=y", "y=x"]:
-            fig.add_trace(go.Scatter(mode="lines", x=xrange, y=xrange, showlegend=False))
+            fig.add_trace(
+                go.Scatter(mode="lines", x=xrange, y=xrange, showlegend=False)
+            )
         elif re.match("(x|y)=", add_line):
             try:
                 c = float(add_line.split("=")[1])
@@ -194,11 +201,15 @@ def hist(tensor, renderer=None, **kwargs):
         kwargs_post["bargap"] = 0.1
     if "margin" in kwargs_post and isinstance(kwargs_post["margin"], int):
         kwargs_post["margin"] = dict.fromkeys(list("tblr"), kwargs_post["margin"])
-    px.histogram(x=to_numpy(tensor), **kwargs_pre).update_layout(**kwargs_post).show(renderer)
+    px.histogram(x=to_numpy(tensor), **kwargs_pre).update_layout(**kwargs_post).show(
+        renderer
+    )
 
 
 # Old function - not using now that PyTorch Lightning has been removed
-def plot_train_loss_and_test_accuracy_from_metrics(metrics: pd.DataFrame, title: str) -> None:
+def plot_train_loss_and_test_accuracy_from_metrics(
+    metrics: pd.DataFrame, title: str
+) -> None:
     # Separate train and test metrics from the dataframe containing all metrics
     assert "accuracy" in metrics.columns, "Did you log the accuracy metric?"
     train_metrics = metrics[~metrics["train_loss"].isna()]
@@ -209,7 +220,11 @@ def plot_train_loss_and_test_accuracy_from_metrics(metrics: pd.DataFrame, title:
         y=[train_metrics["train_loss"].values, test_metrics["accuracy"].values],
         x=[train_metrics["step"].values, test_metrics["step"].values],
         names=["Training", "Testing"],
-        labels={"x": "Num samples seen", "y1": "Cross entropy loss", "y2": "Test accuracy"},
+        labels={
+            "x": "Num samples seen",
+            "y1": "Cross entropy loss",
+            "y2": "Test accuracy",
+        },
         use_secondary_yaxis=True,
         title=title,
         width=800,
@@ -230,7 +245,9 @@ def plot_train_loss_and_test_accuracy_from_trainer(trainer, title: str) -> None:
     y = [trainer.logged_variables["loss"], trainer.logged_variables["accuracy"]]
     x = [
         list(range(epochs * batches_per_epoch)),
-        list(range(batches_per_epoch, epochs * batches_per_epoch + 1, batches_per_epoch)),
+        list(
+            range(batches_per_epoch, epochs * batches_per_epoch + 1, batches_per_epoch)
+        ),
     ]
     assert len(y[1]) == epochs, "Did you log the accuracy metric once per epoch?"
     assert (
@@ -242,7 +259,11 @@ def plot_train_loss_and_test_accuracy_from_trainer(trainer, title: str) -> None:
         y=y,
         x=x,
         names=["Training", "Testing"],
-        labels={"x": "Num batches seen", "y1": "Cross entropy loss", "y2": "Test accuracy"},
+        labels={
+            "x": "Num batches seen",
+            "y1": "Cross entropy loss",
+            "y2": "Test accuracy",
+        },
         use_secondary_yaxis=True,
         title=title,
         width=800,

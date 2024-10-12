@@ -111,9 +111,14 @@ def test_sgd_param_groups(SGD):
         assert isinstance(w0_submitted, t.Tensor)
         t.testing.assert_close(w0_correct, w0_submitted, rtol=0, atol=1e-5)
 
-    print("Testing that your function doesn't allow duplicates (this should raise an error): ")
+    print(
+        "Testing that your function doesn't allow duplicates (this should raise an error): "
+    )
     description, kwargs = (
-        [{"params": "base", "lr": 1e-2, "momentum": 0.95}, {"params": "base", "lr": 1e-3}],
+        [
+            {"params": "base", "lr": 1e-2, "momentum": 0.95},
+            {"params": "base", "lr": 1e-3},
+        ],
         dict(momentum=0.9, weight_decay=0.1),
     )
     try:
@@ -123,7 +128,9 @@ def test_sgd_param_groups(SGD):
     except:
         print("Got an error, as expected.\n")
     else:
-        raise Exception("Should have gotten an error from using duplicate parameters, but didn't.")
+        raise Exception(
+            "Should have gotten an error from using duplicate parameters, but didn't."
+        )
 
     print("All tests in `test_sgd_param_groups` passed!")
 
@@ -135,7 +142,9 @@ def format_name(name):
 def format_config(config, line_breaks=False):
     if isinstance(config, dict):
         if line_breaks:
-            s = "<br>   " + "<br>   ".join([f"{key}={value}" for key, value in config.items()])
+            s = "<br>   " + "<br>   ".join(
+                [f"{key}={value}" for key, value in config.items()]
+            )
         else:
             s = ", ".join([f"{key}={value}" for key, value in config.items()])
     else:
@@ -271,8 +280,12 @@ def get_sgd_optimizer(model, opt_config, SGD):
     else:
         opt_params = [d.copy() for d in opt_config[0]]
         _opt_config = opt_config[1]
-        weight_params = [param for name, param in model.named_parameters() if "weight" in name]
-        bias_params = [param for name, param in model.named_parameters() if "bias" in name]
+        weight_params = [
+            param for name, param in model.named_parameters() if "weight" in name
+        ]
+        bias_params = [
+            param for name, param in model.named_parameters() if "bias" in name
+        ]
         for param_group in opt_params:
             param_group["params"] = (
                 weight_params if param_group["params"] == "weights" else bias_params
@@ -477,7 +490,9 @@ def plot_results(loss_list, accuracy_list):
             ),
             secondary_y=True,
         )
-    fig.update_layout(template="simple_white", title_text="Training loss & accuracy on CIFAR10")
+    fig.update_layout(
+        template="simple_white", title_text="Training loss & accuracy on CIFAR10"
+    )
     fig.show()
 
 
@@ -502,7 +517,9 @@ def test_sweep_config(sweep_config):
     sweep_config_parameters_expected = sweep_config_expected["parameters"]
     sweep_config_parameters = sweep_config["parameters"]
     for k, v in sweep_config_parameters.items():
-        assert k in sweep_config_parameters_expected, f"Unexpected parameter in sweep config: {k}"
+        assert (
+            k in sweep_config_parameters_expected
+        ), f"Unexpected parameter in sweep config: {k}"
         assert isinstance(v, dict), f"Values for parameter {k} should be a dictionary"
         if "values" in v:
             v["values"] = list(v["values"])

@@ -27,7 +27,11 @@ from part3_optimization.utils import plot_fn, plot_fn_with_points
 from plotly_utils import bar, imshow
 
 device = t.device(
-    "mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu"
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -48,7 +52,9 @@ if MAIN:
 # %%
 
 
-def opt_fn_with_sgd(fn: Callable, xy: t.Tensor, lr=0.001, momentum=0.98, n_iters: int = 100):
+def opt_fn_with_sgd(
+    fn: Callable, xy: t.Tensor, lr=0.001, momentum=0.98, n_iters: int = 100
+):
     """
     Optimize the a given function starting from the specified point.
 
@@ -113,7 +119,9 @@ class SGD:
             https://pytorch.org/docs/stable/generated/torch.optim.SGD.html#torch.optim.SGD
 
         """
-        params = list(params)  # turn params into a list (because it might be a generator)
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
         self.lr = lr
         self.mu = momentum
@@ -168,7 +176,9 @@ class RMSprop:
             https://pytorch.org/docs/stable/generated/torch.optim.RMSprop.html
 
         """
-        params = list(params)  # turn params into a list (because it might be a generator)
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
         self.lr = lr
         self.eps = eps
@@ -223,7 +233,9 @@ class Adam:
         Like the PyTorch version, but assumes amsgrad=False and maximize=False
             https://pytorch.org/docs/stable/generated/torch.optim.Adam.html
         """
-        params = list(params)  # turn params into a list (because it might be a generator)
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
         self.lr = lr
         self.beta1, self.beta2 = betas
@@ -278,7 +290,9 @@ class AdamW:
         Like the PyTorch version, but assumes amsgrad=False and maximize=False
             https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
         """
-        params = list(params)  # turn params into a list (because it might be a generator)
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
         self.lr = lr
         self.beta1, self.beta2 = betas
@@ -321,7 +335,11 @@ if MAIN:
 
 
 def opt_fn(
-    fn: Callable, xy: t.Tensor, optimizer_class, optimizer_hyperparams: dict, n_iters: int = 100
+    fn: Callable,
+    xy: t.Tensor,
+    optimizer_class,
+    optimizer_hyperparams: dict,
+    n_iters: int = 100,
 ):
     """Optimize the a given function starting from the specified point.
 
@@ -480,8 +498,12 @@ def get_cifar(subset: int = 1):
         root="./data", train=False, download=True, transform=IMAGENET_TRANSFORM
     )
     if subset > 1:
-        cifar_trainset = Subset(cifar_trainset, indices=range(0, len(cifar_trainset), subset))
-        cifar_testset = Subset(cifar_testset, indices=range(0, len(cifar_testset), subset))
+        cifar_trainset = Subset(
+            cifar_trainset, indices=range(0, len(cifar_trainset), subset)
+        )
+        cifar_testset = Subset(
+            cifar_testset, indices=range(0, len(cifar_testset), subset)
+        )
     return cifar_trainset, cifar_testset
 
 
@@ -513,7 +535,9 @@ class ResNetTrainer:
     def __init__(self, args: ResNetTrainingArgs):
         self.args = args
         self.model = get_resnet_for_feature_extraction(args.n_classes).to(device)
-        self.optimizer = t.optim.Adam(self.model.out_layers[-1].parameters(), lr=args.learning_rate)
+        self.optimizer = t.optim.Adam(
+            self.model.out_layers[-1].parameters(), lr=args.learning_rate
+        )
         self.trainset, self.testset = get_cifar(subset=args.subset)
         self.logged_variables = {"loss": [], "accuracy": []}
 
@@ -541,7 +565,9 @@ class ResNetTrainer:
             train_dataloader = DataLoader(
                 self.trainset, batch_size=self.args.batch_size, shuffle=True
             )
-            val_dataloader = DataLoader(self.testset, batch_size=self.args.batch_size, shuffle=True)
+            val_dataloader = DataLoader(
+                self.testset, batch_size=self.args.batch_size, shuffle=True
+            )
             progress_bar = tqdm(total=len(train_dataloader))
 
             # Training loop (includes updating progress bar, and logging loss)
@@ -557,7 +583,10 @@ class ResNetTrainer:
             # Compute accuracy by summing n_correct over all batches, and dividing by number of items
             self.model.eval()
             accuracy = float(
-                sum(self.validation_step(imgs, labels) for imgs, labels in val_dataloader)
+                sum(
+                    self.validation_step(imgs, labels)
+                    for imgs, labels in val_dataloader
+                )
             ) / len(self.testset)
 
             # Update progress bar description to include accuracy, and log it
@@ -590,7 +619,14 @@ def test_resnet_on_random_input(model: ResNet34, n_inputs: int = 3):
         probs = probs.unsqueeze(0)
     for img, label, prob in zip(imgs, classes, probs):
         display(HTML(f"<h2>Classification probabilities (true class = {label})</h2>"))
-        imshow(img, width=200, height=200, margin=0, xaxis_visible=False, yaxis_visible=False)
+        imshow(
+            img,
+            width=200,
+            height=200,
+            margin=0,
+            xaxis_visible=False,
+            yaxis_visible=False,
+        )
         bar(
             prob,
             x=cifar_trainset.classes,  # type: ignore
@@ -619,7 +655,9 @@ class ResNetTrainerWandb(ResNetTrainer):
     def __init__(self, args: ResNetTrainingArgsWandb):
         super().__init__(args)
         self.step = 0
-        wandb.init(project=args.wandb_project, name=args.wandb_name, config=args.__dict__)
+        wandb.init(
+            project=args.wandb_project, name=args.wandb_name, config=args.__dict__
+        )
         wandb.watch(self.model.out_layers[-1], log="all", log_freq=20)
 
     def train(self):
@@ -628,7 +666,9 @@ class ResNetTrainerWandb(ResNetTrainer):
             train_dataloader = DataLoader(
                 self.trainset, batch_size=self.args.batch_size, shuffle=True
             )
-            val_dataloader = DataLoader(self.testset, batch_size=self.args.batch_size, shuffle=True)
+            val_dataloader = DataLoader(
+                self.testset, batch_size=self.args.batch_size, shuffle=True
+            )
             progress_bar = tqdm(total=len(train_dataloader))
 
             # Training loop (includes updating progress bar, and logging loss)
@@ -645,7 +685,10 @@ class ResNetTrainerWandb(ResNetTrainer):
             # Compute accuracy by summing n_correct over all batches, and dividing by number of items
             self.model.eval()
             accuracy = float(
-                sum(self.validation_step(imgs, labels) for imgs, labels in val_dataloader)
+                sum(
+                    self.validation_step(imgs, labels)
+                    for imgs, labels in val_dataloader
+                )
             ) / len(self.testset)
 
             # Update progress bar description to include accuracy, and log it

@@ -25,9 +25,16 @@ from solutions_bonus import get_resnet_for_feature_extraction
 from utils import plot_fn, plot_fn_with_points
 import tests as tests
 
-device = t.device('mps' if t.backends.mps.is_available() else 'cuda' if t.cuda.is_available() else 'cpu')
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 # %%
+
 
 def pathological_curve_loss(x: t.Tensor, y: t.Tensor):
     # Example of a pathological curvature. There are many more possible, feel free to experiment here!
@@ -48,16 +55,20 @@ for step in range(10):
 
     loss.backward()
     optimizer.step()
-    print(f'Step {step+1}: x = {xy[0].item():.4f}, y = {xy[1].item():.4f}, loss = {loss.item():.4f}')
+    print(
+        f"Step {step+1}: x = {xy[0].item():.4f}, y = {xy[1].item():.4f}, loss = {loss.item():.4f}"
+    )
 
     new_xy = xy.detach().clone()
     pts_list.append(new_xy)
 pts_list
+
+
 # %%
-?t.optim.SGD.step
-# %%
-def opt_fn_with_sgd(fn: Callable, xy: t.Tensor, lr=0.001, momentum=0.98, n_iters: int = 100):
-    '''
+def opt_fn_with_sgd(
+    fn: Callable, xy: t.Tensor, lr=0.001, momentum=0.98, n_iters: int = 100
+):
+    """
     Optimize the a given function starting from the specified point.
 
     xy: shape (2,). The (x, y) starting point.
@@ -65,7 +76,7 @@ def opt_fn_with_sgd(fn: Callable, xy: t.Tensor, lr=0.001, momentum=0.98, n_iters
     lr, momentum: parameters passed to the torch.optim.SGD optimizer.
 
     Return: (n_iters, 2). The (x,y) BEFORE each step. So out[0] is the starting point.
-    '''
+    """
     # SOLUTION
     assert xy.requires_grad
 
@@ -93,32 +104,41 @@ optimizer_list = [
 
 for optimizer_class, params in optimizer_list:
     xy = t.tensor([2.5, 2.5], requires_grad=True)
-    xys = opt_fn_with_sgd(pathological_curve_loss, xy=xy, lr=params['lr'], momentum=params['momentum'],
-                          n_iters= 99)
+    xys = opt_fn_with_sgd(
+        pathological_curve_loss,
+        xy=xy,
+        lr=params["lr"],
+        momentum=params["momentum"],
+        n_iters=99,
+    )
 
     print(xys[-1, :])
     points.append((xys, optimizer_class, params))
 plot_fn_with_points(pathological_curve_loss, points=points)
+
+
 # %%
 class SGD:
     def __init__(
-        self, 
-        params: Iterable[t.nn.parameter.Parameter], 
-        lr: float, 
-        momentum: float = 0.0, 
-        weight_decay: float = 0.0
+        self,
+        params: Iterable[t.nn.parameter.Parameter],
+        lr: float,
+        momentum: float = 0.0,
+        weight_decay: float = 0.0,
     ):
-        '''Implements SGD with momentum.
+        """Implements SGD with momentum.
 
         Like the PyTorch version, but assume nesterov=False, maximize=False, and dampening=0
             https://pytorch.org/docs/stable/generated/torch.optim.SGD.html#torch.optim.SGD
 
-        '''
+        """
         self.lr = lr
         self.mu = momentum
         self.lmda = weight_decay
 
-        params = list(params) # turn params into a list (because it might be a generator)
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
 
         self.gs = [t.zeros_like(param) for param in params]
@@ -126,23 +146,20 @@ class SGD:
         self.t = 0
 
     def zero_grad(self) -> None:
-        '''Zeros all gradients of the parameters in `self.params`.
-        '''
+        """Zeros all gradients of the parameters in `self.params`."""
         for param in self.params:
             param.grad = None
 
-
     @t.inference_mode()  # otherwise opreations will add stuff to the gradient graph
     def step(self) -> None:
-        '''Performs a single optimization step of the SGD algorithm.
-        '''
+        """Performs a single optimization step of the SGD algorithm."""
         for i, (prev_grad, param) in enumerate(zip(self.gs, self.params)):
             new_g = param.grad
 
-            if self.lmda>0:
+            if self.lmda > 0:
                 new_g = new_g + self.lmda * param
 
-            if self.mu > 0 and self.t > 0:           
+            if self.mu > 0 and self.t > 0:
                 new_g = self.mu * prev_grad + new_g
 
             self.gs[i] = new_g
@@ -151,11 +168,13 @@ class SGD:
 
         self.t += 1
 
-
     def __repr__(self) -> str:
         return f"SGD(lr={self.lr}, momentum={self.mu}, weight_decay={self.lmda})"
 
+
 tests.test_sgd(SGD)
+
+
 # %%
 # RMSprop
 class RMSprop:
@@ -168,40 +187,40 @@ class RMSprop:
         weight_decay: float = 0.0,
         momentum: float = 0.0,
     ):
-        '''Implements RMSprop.
+        """Implements RMSprop.
 
         Like the PyTorch version, but assumes centered=False
             https://pytorch.org/docs/stable/generated/torch.optim.RMSprop.html
 
-        '''
+        """
         self.lr = lr
         self.alpha = alpha
         self.eps = eps
         self.lmda = weight_decay
         self.mu = momentum
 
-        params = list(params) # turn params into a list (because it might be a generator)
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
 
         self.vs = [t.zeros_like(param) for param in params]
         self.bs = [t.zeros_like(param) for param in params]
 
     def zero_grad(self) -> None:
-        '''Zeros all gradients of the parameters in `self.params`.
-        '''
+        """Zeros all gradients of the parameters in `self.params`."""
         for param in self.params:
             param.grad = None
-
 
     @t.inference_mode()
     def step(self) -> None:
         for i, (prev_v, prev_b, param) in enumerate(zip(self.vs, self.bs, self.params)):
             new_grad = param.grad
 
-            if self.lmda != 0: 
+            if self.lmda != 0:
                 new_grad = new_grad + self.lmda * param
 
-            v = self.alpha * prev_v + (1 - self.alpha) * new_grad ** 2
+            v = self.alpha * prev_v + (1 - self.alpha) * new_grad**2
             self.vs[i] = v
 
             if self.mu > 0:
@@ -210,7 +229,6 @@ class RMSprop:
                 self.params[i] -= self.lr * b
             else:
                 self.params[i] -= self.lr * new_grad / (t.sqrt(v) + self.eps)
-            
 
     def __repr__(self) -> str:
         return f"RMSprop(lr={self.lr}, eps={self.eps}, momentum={self.mu}, weight_decay={self.lmda}, alpha={self.alpha})"
@@ -218,6 +236,7 @@ class RMSprop:
 
 tests.test_rmsprop(RMSprop)
 # %%
+
 
 class Adam:
     def __init__(
@@ -228,12 +247,14 @@ class Adam:
         eps: float = 1e-08,
         weight_decay: float = 0.0,
     ):
-        '''Implements Adam.
+        """Implements Adam.
 
         Like the PyTorch version, but assumes amsgrad=False and maximize=False
             https://pytorch.org/docs/stable/generated/torch.optim.Adam.html
-        '''
-        params = list(params) # turn params into a list (because it might be a generator)
+        """
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
         self.lr = lr
         self.beta1 = betas[0]
@@ -246,20 +267,18 @@ class Adam:
         self.ms = [t.zeros_like(param) for param in params]
 
     def zero_grad(self) -> None:
-        '''Zeros all gradients of the parameters in `self.params`.
-        '''
+        """Zeros all gradients of the parameters in `self.params`."""
         for param in self.params:
             param.grad = None
 
     @t.inference_mode()
     def step(self) -> None:
         for i, (prev_v, prev_m, param) in enumerate(zip(self.vs, self.ms, self.params)):
-            
             new_grad = param.grad
 
             if self.lmda != 0:
                 new_grad = new_grad + self.lmda * param
-            
+
             m = self.beta1 * prev_m + (1 - self.beta1) * new_grad
             v = self.beta2 * prev_v + (1 - self.beta2) * new_grad.pow(2)
             self.ms[i] = m
@@ -268,17 +287,17 @@ class Adam:
             m_hat = m / (1 - self.beta1**self.t)
             v_hat = v / (1 - self.beta2**self.t)
 
-
             self.params[i] -= self.lr * m_hat / (t.sqrt(v_hat) + self.eps)
 
         self.t += 1
-
 
     def __repr__(self) -> str:
         return f"Adam(lr={self.lr}, beta1={self.beta1}, beta2={self.beta2}, eps={self.eps}, weight_decay={self.lmda})"
 
 
 tests.test_adam(Adam)
+
+
 # %%
 class AdamW:
     def __init__(
@@ -289,12 +308,14 @@ class AdamW:
         eps: float = 1e-08,
         weight_decay: float = 0.0,
     ):
-        '''Implements Adam.
+        """Implements Adam.
 
         Like the PyTorch version, but assumes amsgrad=False and maximize=False
             https://pytorch.org/docs/stable/generated/torch.optim.Adam.html
-        '''
-        params = list(params) # turn params into a list (because it might be a generator)
+        """
+        params = list(
+            params
+        )  # turn params into a list (because it might be a generator)
         self.params = params
         self.lr = lr
         self.beta1 = betas[0]
@@ -307,19 +328,17 @@ class AdamW:
         self.ms = [t.zeros_like(param) for param in params]
 
     def zero_grad(self) -> None:
-        '''Zeros all gradients of the parameters in `self.params`.
-        '''
+        """Zeros all gradients of the parameters in `self.params`."""
         for param in self.params:
             param.grad = None
 
     @t.inference_mode()
     def step(self) -> None:
         for i, (prev_v, prev_m, param) in enumerate(zip(self.vs, self.ms, self.params)):
-            
             new_grad = param.grad
 
             self.params[i] -= self.lr * self.lmda * param
-            
+
             m = self.beta1 * prev_m + (1 - self.beta1) * new_grad
             v = self.beta2 * prev_v + (1 - self.beta2) * new_grad.pow(2)
             self.ms[i] = m
@@ -328,11 +347,9 @@ class AdamW:
             m_hat = m / (1 - self.beta1**self.t)
             v_hat = v / (1 - self.beta2**self.t)
 
-
             self.params[i] -= self.lr * m_hat / (t.sqrt(v_hat) + self.eps)
 
         self.t += 1
-
 
     def __repr__(self) -> str:
         return f"Adam(lr={self.lr}, beta1={self.beta1}, beta2={self.beta2}, eps={self.eps}, weight_decay={self.lmda})"

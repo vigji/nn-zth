@@ -28,7 +28,9 @@ from plotly_utils import line
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 # %%
 # Implement ReLU:
@@ -361,6 +363,7 @@ print(f"Manually verify that this is an informative repr: {m}")
 # %% ResNets
 from collections import OrderedDict
 
+
 class Sequential(nn.Module):
     _modules: dict[str, nn.Module]
 
@@ -370,19 +373,20 @@ class Sequential(nn.Module):
             self._modules[str(index)] = mod
 
     def __getitem__(self, index: int) -> nn.Module:
-        index %= len(self._modules) # deal with negative indices
+        index %= len(self._modules)  # deal with negative indices
         return self._modules[str(index)]
 
     def __setitem__(self, index: int, module: nn.Module) -> None:
-        index %= len(self._modules) # deal with negative indices
+        index %= len(self._modules)  # deal with negative indices
         self._modules[str(index)] = module
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        '''Chain each module together, with the output from one feeding into the next one.'''
+        """Chain each module together, with the output from one feeding into the next one."""
         for mod in self._modules.values():
             x = mod(x)
         return x
-    
+
+
 # %%
 
 
@@ -510,7 +514,9 @@ class ResidualBlock(nn.Module):
         else:
             self.right = Sequential(
                 Conv2d(
-                    stride=first_stride, in_channels=in_feats, out_channels=out_feats,
+                    stride=first_stride,
+                    in_channels=in_feats,
+                    out_channels=out_feats,
                     kernel_size=1,
                 ),
                 BatchNorm2d(num_features=out_feats),
@@ -573,7 +579,6 @@ class ResNet34(nn.Module):
         first_strides_per_group=[1, 2, 2, 2],
         n_classes=1000,
     ):
-
         super().__init__()
         img_ch = 3
         in_feats0 = 64
@@ -604,7 +609,10 @@ class ResNet34(nn.Module):
         ):
             block_list.append(
                 BlockGroup(
-                    n_blocks=n_blocks, in_feats=in_feats, out_feats=out_features, first_stride=first_stride
+                    n_blocks=n_blocks,
+                    in_feats=in_feats,
+                    out_feats=out_features,
+                    first_stride=first_stride,
                 )
             )
             in_feats = out_features
@@ -624,7 +632,7 @@ class ResNet34(nn.Module):
         x = self.residual_layers(x)
         x = self.out_layers(x)
 
-        return(x)
+        return x
 
 
 my_resnet = ResNet34()
@@ -686,11 +694,13 @@ IMAGE_SIZE = 224
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
-IMAGENET_TRANSFORM = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-])
+IMAGENET_TRANSFORM = transforms.Compose(
+    [
+        transforms.ToTensor(),
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ]
+)
 
 prepared_images = t.stack([IMAGENET_TRANSFORM(img) for img in images], dim=0)
 
@@ -701,14 +711,15 @@ assert prepared_images.shape == (len(images), 3, IMAGE_SIZE, IMAGE_SIZE)
 # %%
 # Predict sample dataset
 
+
 def predict(model, images: t.Tensor) -> t.Tensor:
-    '''
+    """
     Returns the predicted class for each image (as a 1D array of ints).
-    '''
+    """
     predictions = my_resnet(prepared_images)
     return predictions.argmax(1)
     # predicted_labels = [imagenet_labels[i] for i in best_predictions]
-    
+
 
 # %%
 with open(Path(__file__).parent / "imagenet_labels.json") as f:
@@ -726,46 +737,47 @@ for img, label in zip(images, my_predictions):
     print(f"Class {label}: {imagenet_labels[label]}")
     display(img)
     print()
+
+
 # %%
 # Aside: hooks
 class NanModule(nn.Module):
-    '''
+    """
     Define a module that always returns NaNs (we will use hooks to identify this error).
-    '''
+    """
+
     def forward(self, x):
-        return t.full_like(x, float('nan'))
+        return t.full_like(x, float("nan"))
 
 
-model = nn.Sequential(
-    nn.Identity(),
-    NanModule(),
-    nn.Identity()
-)
+model = nn.Sequential(nn.Identity(), NanModule(), nn.Identity())
 
 
-def hook_check_for_nan_output(module: nn.Module, input: tuple[t.Tensor], output: t.Tensor) -> None:
-    '''
+def hook_check_for_nan_output(
+    module: nn.Module, input: tuple[t.Tensor], output: t.Tensor
+) -> None:
+    """
     Hook function which detects when the output of a layer is NaN.
-    '''
+    """
     if t.isnan(output).any():
         raise ValueError(f"NaN output from {module}")
 
 
 def add_hook(module: nn.Module) -> None:
-    '''
+    """
     Register our hook function in a module.
 
     Use model.apply(add_hook) to recursively apply the hook to model and all submodules.
-    '''
+    """
     module.register_forward_hook(hook_check_for_nan_output)
 
 
 def remove_hooks(module: nn.Module) -> None:
-    '''
+    """
     Remove all hooks from module.
 
     Use module.apply(remove_hooks) to do this recursively.
-    '''
+    """
     module._backward_hooks.clear()
     module._forward_hooks.clear()
     module._forward_pre_hooks.clear()
