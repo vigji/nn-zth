@@ -2,6 +2,7 @@
 import os
 import functools
 import json
+from re import A
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,7 @@ import math
 from unicodedata import numeric
 
 import einops
+import git
 import numpy as np
 import torch as t
 import torch.nn as nn
@@ -84,7 +86,7 @@ class Linear(nn.Module):
         return out
 
     def extra_repr(self) -> str:
-        return f"weights={self.weights}, biases={self.biases}, ..."
+        return f"weights={self.weight}, biases={self.bias}, ..."
 
 
 tests.test_linear_parameters(Linear, bias=False)
@@ -792,4 +794,75 @@ except ValueError as e:
     print(e)
 
 model = model.apply(remove_hooks)
+# %%
+# Bonus: finetuning
+
+layer0, layer1 = nn.Linear(3, 4), nn.Linear(4, 5)
+
+layer0.requires_grad_(False) # generic code to set `param.requires_grad = False` recursively for a module (or entire model)
+
+x = t.randn(3)
+out = layer1(layer0(x)).sum()
+out.backward()
+
+assert layer0.weight.grad is None
+assert layer1.weight.grad is not None
+
+
+
+# %%
+def get_resnet_for_feature_extraction(n_classes: int) -> ResNet34:
+    '''
+    Creates a ResNet34 instance, replaces its final linear layer with a classifier
+    for `n_classes` classes, and freezes all weights except the ones in this layer.
+
+    Returns the ResNet model.
+    '''
+
+    new_resnet = ResNet34()
+    pretrained_resnet = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
+    new_resnet = copy_weights(new_resnet, pretrained_resnet)
+
+    for param in new_resnet.parameters():
+        param.requires_grad = False
+
+    previous_out_layers = list(new_resnet.out_layers.children())
+    new_resnet.out_layers = Sequential(previous_out_layers[0], 
+                                       Linear(512, n_classes))
+
+    return new_resnet
+
+
+
+# %%
+# remove last layer of the Sequential obj:
+tests.test_get_resnet_for_feature_extraction(get_resnet_for_feature_extraction)
+# %%
+
+def get_cifar(subset: int):
+    cifar_trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=IMAGENET_TRANSFORM)
+    cifar_testset = datasets.CIFAR10(root='./data', train=False, download=True, transform=IMAGENET_TRANSFORM)
+
+    if subset > 1:
+        cifar_trainset = Subset(cifar_trainset, indices=range(0, len(cifar_trainset), subset))
+        cifar_testset = Subset(cifar_testset, indices=range(0, len(cifar_testset), subset))
+
+    return cifar_trainset, cifar_testset
+
+
+@dataclass
+class ResNetTrainingArgs():
+    batch_size: int = 64
+    epochs: int = 3
+    learning_rate: float = 1e-3
+    n_classes: int = 10
+    subset: int = 10
+# %%
+
+# YOUR CODE HERE - write your `ResNetTrainer` class
+
+args = ResNetTrainingArgs()
+trainer = ResNetTrainer(args)
+trainer.train()
+plot_train_loss_and_test_accuracy_from_trainer(trainer, title="Feature extraction with ResNet34")
 # %%

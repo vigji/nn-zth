@@ -162,5 +162,7 @@ cython_debug/
 .idea/
 
 **/MNIST/**
+**/*cifar-10*
+**/*cifar-10*/**
 
 *.DS_Store
