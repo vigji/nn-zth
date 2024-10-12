@@ -175,6 +175,7 @@ class SGD:
 tests.test_sgd(SGD)
 
 
+
 # %%
 # RMSprop
 class RMSprop:
@@ -357,3 +358,141 @@ class AdamW:
 
 tests.test_adamw(AdamW)
 # %%
+
+# %%
+def opt_fn(fn: Callable, xy: t.Tensor, optimizer_class, optimizer_hyperparams: dict, n_iters: int = 10):
+    """
+    Optimize the a given function starting from the specified point.
+
+    xy: shape (2,). The (x, y) starting point.
+    n_iters: number of steps.
+    lr, momentum: parameters passed to the torch.optim.SGD optimizer.
+
+    Return: (n_iters, 2). The (x,y) BEFORE each step. So out[0] is the starting point.
+    """
+    # SOLUTION
+    assert xy.requires_grad
+
+    xys = t.zeros((n_iters, 2))
+
+    # YOUR CODE HERE: run optimization, and populate `xys` with the coordinates before each step
+    optimizer = optimizer_class([xy], **optimizer_hyperparams)
+
+    for i in range(n_iters):
+        xys[i] = xy.detach()
+        out = fn(xy[0], xy[1])
+        out.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+    return xys
+
+# %%
+points = []
+
+optimizer_list = [
+    (SGD, {"lr": 0.03, "momentum": 0.99}),
+    (RMSprop, {"lr": 0.02, "alpha": 0.99, "momentum": 0.8}),
+    (Adam, {"lr": 0.2, "betas": (0.99, 0.99), "weight_decay": 0.005}),
+    (AdamW, {"lr": 0.2, "betas": (0.99, 0.99), "weight_decay": 0.005}),
+]
+
+for optimizer_class, params in optimizer_list:
+    xy = t.tensor([2.5, 2.5], requires_grad=True)
+    xys = opt_fn(pathological_curve_loss, xy=xy, optimizer_class=optimizer_class, optimizer_hyperparams=params)
+    points.append((xys, optimizer_class, params))
+
+plot_fn_with_points(pathological_curve_loss, points=points)
+# %%
+def bivariate_gaussian(x, y, x_mean=0.0, y_mean=0.0, x_sig=1.0, y_sig=1.0):
+    norm = 1 / (2 * np.pi * x_sig * y_sig)
+    x_exp = (-1 * (x - x_mean) ** 2) / (2 * x_sig**2)
+    y_exp = (-1 * (y - y_mean) ** 2) / (2 * y_sig**2)
+    return norm * t.exp(x_exp + y_exp)
+
+
+def neg_trimodal_func(x, y):
+    z = -bivariate_gaussian(x, y, x_mean=1.0, y_mean=-0.5, x_sig=0.2, y_sig=0.2)
+    z -= bivariate_gaussian(x, y, x_mean=-1.0, y_mean=0.5, x_sig=0.2, y_sig=0.2)
+    z -= bivariate_gaussian(x, y, x_mean=-0.5, y_mean=-0.8, x_sig=0.2, y_sig=0.2)
+    return z
+
+
+def rosenbrocks_banana_func(x: t.Tensor, y: t.Tensor, a=1, b=100) -> t.Tensor:
+    return (a - x) ** 2 + b * (y - x**2) ** 2 + 1
+
+
+for fun, args in zip([neg_trimodal_func, rosenbrocks_banana_func], [dict(x_range=(-2, 2), y_range=(-2, 2)),
+                                                                    dict(x_range=(-2, 2), y_range=(-1, 3))]):
+    points = []
+
+    optimizer_list = [
+        # t.optim.SGD, {"lr": 0.003, "momentum": 0}),
+        (RMSprop, {"lr": 0.02, "alpha": 0.99, "momentum": 0.8}),
+        (Adam, {"lr": 0.2, "betas": (0.99, 0.99), "weight_decay": 0.005}),
+        (AdamW, {"lr": 0.2, "betas": (0.99, 0.99), "weight_decay": 0.005}),
+    ]
+
+    for optimizer_class, params in optimizer_list:
+        xy = t.tensor([2.5, 2.5], requires_grad=True)
+        xys = opt_fn(fun, xy=xy, optimizer_class=optimizer_class, optimizer_hyperparams=params)
+        points.append((xys, optimizer_class, params))
+
+    plot_fn_with_points(fun, points=points, **args)
+# %%
+# Rewrite SGD to accept params dicts
+class SGD:
+
+    def __init__(self, params, **kwargs):
+        '''Implements SGD with momentum.
+
+        Accepts parameters in groups, or an iterable.
+
+        Like the PyTorch version, but assume nesterov=False, maximize=False, and dampening=0
+            https://pytorch.org/docs/stable/generated/torch.optim.SGD.html#torch.optim.SGD
+        '''
+
+        if not isinstance(params, (list, tuple)):
+            params = [{"params": params}]
+
+        default_param_values = dict(momentum=0.0, weight_decay=0.0)
+
+        self.param_groups = []
+        params_to_check_for_duplicates = set()
+
+        for param_group in params:
+            param_group = {**default_param_values, **kwargs, **param_group}
+            assert "lr" in param_group, "Error: one of the parameter groups didn't specify a value for required parameter `lr`."
+            param_group["params"] = list(param_group["params"])
+            param_group["gs"] = [t.zeros_like(p) for p in param_group["params"]]
+            self.param_groups.append(param_group)
+
+            for param in param_group["params"]:
+                assert param not in params_to_check_for_duplicates, "Error: some parameters appear in more than one parameter group"
+                params_to_check_for_duplicates.add(param)
+
+        self.t = 1
+
+    def zero_grad(self) -> None:
+        for param_group in self.param_groups:
+            for p in param_group["params"]:
+                p.grad = None
+
+    @t.inference_mode()
+    def step(self) -> None:
+        for i, param_group in enumerate(self.param_groups):
+            lmda = param_group["weight_decay"]
+            mu = param_group["momentum"]
+            gamma = param_group["lr"]
+            for j, (p, g) in enumerate(zip(param_group["params"], param_group["gs"])):
+                new_g = p.grad
+                if lmda != 0:
+                    new_g = new_g + (lmda * p)
+                if mu > 0 and self.t > 1:
+                    new_g = (mu * g) + new_g
+                param_group["params"][j] -= gamma * new_g
+                self.param_groups[i]["gs"][j] = new_g
+        self.t += 1
+# %%
+tests.test_sgd_param_groups(SGD)
+
