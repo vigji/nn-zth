@@ -524,13 +524,22 @@ tests.test_sgd_param_groups(SGD)
 # %%
 # Part 2: Weights&Biases
 
+
 # boilerplate to get cifar:
 def get_cifar(subset: int = 1):
-    cifar_trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=IMAGENET_TRANSFORM)
-    cifar_testset = datasets.CIFAR10(root='./data', train=False, download=True, transform=IMAGENET_TRANSFORM)
+    cifar_trainset = datasets.CIFAR10(
+        root="./data", train=True, download=True, transform=IMAGENET_TRANSFORM
+    )
+    cifar_testset = datasets.CIFAR10(
+        root="./data", train=False, download=True, transform=IMAGENET_TRANSFORM
+    )
     if subset > 1:
-        cifar_trainset = Subset(cifar_trainset, indices=range(0, len(cifar_trainset), subset))
-        cifar_testset = Subset(cifar_testset, indices=range(0, len(cifar_testset), subset))
+        cifar_trainset = Subset(
+            cifar_trainset, indices=range(0, len(cifar_trainset), subset)
+        )
+        cifar_testset = Subset(
+            cifar_testset, indices=range(0, len(cifar_testset), subset)
+        )
     return cifar_trainset, cifar_testset
 
 
@@ -542,12 +551,13 @@ imshow(
     facet_col_wrap=5,
     facet_labels=[cifar_trainset.classes[i] for i in cifar_trainset.targets[:15]],
     title="CIFAR-10 images",
-    height=600
+    height=600,
 )
+
 
 # %%
 @dataclass
-class ResNetTrainingArgs():
+class ResNetTrainingArgs:
     batch_size: int = 64
     epochs: int = 3
     learning_rate: float = 1e-3
