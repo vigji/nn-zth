@@ -876,16 +876,18 @@ class ResNetTrainer:
         self.device = "mps"
 
         cifar_trainset, cifar_testset = get_cifar(subset=subset)
-        self.train_dataset = DataLoader(cifar_trainset, batch_size=batch_size, shuffle=True)
-        self.test_dataset = DataLoader(cifar_testset, batch_size=batch_size, shuffle=True)
+        self.train_dataset = DataLoader(
+            cifar_trainset, batch_size=batch_size, shuffle=True
+        )
+        self.test_dataset = DataLoader(
+            cifar_testset, batch_size=batch_size, shuffle=True
+        )
 
         self.n_train_data = len(cifar_trainset)
 
         self.resnet = get_resnet_for_feature_extraction(n_classes=n_classes)
         self.resnet.to(self.device)
-        self.optimizer = t.optim.Adam(
-            self.resnet.parameters(), lr=learning_rate
-        )
+        self.optimizer = t.optim.Adam(self.resnet.parameters(), lr=learning_rate)
 
         self.loss_fun = F.cross_entropy
         # self.logged_variables = {"loss": [], "accuracy": []}
@@ -918,6 +920,7 @@ class ResNetTrainer:
         for epoch in range(self.epochs):
             self._train()
             self._test()
+
 
 args = ResNetTrainingArgs()
 trainer = ResNetTrainer(**args.__dict__)
