@@ -1,16 +1,13 @@
 # %%
-import os
-import functools
 import json
-from re import A
-import sys
+
 from dataclasses import dataclass
 from pathlib import Path
 import math
-from unicodedata import numeric
+from random import shuffle
+from random import shuffle
 
 import einops
-import git
 import numpy as np
 import torch as t
 import torch.nn as nn
@@ -25,7 +22,7 @@ from tqdm.notebook import tqdm
 
 import tests as tests
 from utils import print_param_count
-from plotly_utils import line
+from plotly_utils import line, plot_train_loss_and_test_accuracy_from_trainer
 
 device = t.device(
     "mps"
@@ -868,11 +865,62 @@ class ResNetTrainingArgs:
 
 
 # %%
+class ResNetTrainer:
+    def __init__(self, batch_size, epochs, learning_rate, n_classes, subset):
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.n_classes = n_classes
+        self.subset = subset
 
-# YOUR CODE HERE - write your `ResNetTrainer` class
+        self.device = "mps"
+
+        cifar_trainset, cifar_testset = get_cifar(subset=subset)
+        self.train_dataset = DataLoader(cifar_trainset, batch_size=batch_size, shuffle=True)
+        self.test_dataset = DataLoader(cifar_testset, batch_size=batch_size, shuffle=True)
+
+        self.n_train_data = len(cifar_trainset)
+
+        self.resnet = get_resnet_for_feature_extraction(n_classes=n_classes)
+        self.resnet.to(self.device)
+        self.optimizer = t.optim.Adam(
+            self.resnet.parameters(), lr=learning_rate
+        )
+
+        self.loss_fun = F.cross_entropy
+        # self.logged_variables = {"loss": [], "accuracy": []}
+        self.loss = []
+        self.accuracy = []
+
+    def _train(self):
+        model.train()
+        # for _ in range(self.epochs):
+        for batch_x, batch_y in tqdm(self.train_dataset):
+            pred_y_logits = self.resnet(batch_x.to(self.device))
+            loss = self.loss_fun(pred_y_logits, batch_y.to(self.device))
+            self.loss.append(loss.item())
+            loss.backward()
+            self.optimizer.step()
+
+    def _test(self):
+        model.eval()
+        all_results = []
+        for batch_x, batch_y in tqdm(self.train_dataset):
+            pred_y_logits = self.resnet(batch_x.to(self.device))
+            pred_y = t.argmax(pred_y_logits, dim=1)
+            all_results.append((pred_y == batch_y.to(self.device)))
+
+        result_acc = t.concat(all_results).to("cpu")
+        accuracy = t.sum(result_acc) / len(result_acc)
+        self.accuracy.append(accuracy)
+
+    def train(self):
+        for epoch in range(self.epochs):
+            self._train()
+            self._test()
 
 args = ResNetTrainingArgs()
-trainer = ResNetTrainer(args)
+trainer = ResNetTrainer(**args.__dict__)
 trainer.train()
 plot_train_loss_and_test_accuracy_from_trainer(
     trainer, title="Feature extraction with ResNet34"
