@@ -165,4 +165,6 @@ cython_debug/
 **/*cifar-10*
 **/*cifar-10*/**
 
+**/wandb/**
+
 *.DS_Store
