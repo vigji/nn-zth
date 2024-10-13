@@ -858,7 +858,7 @@ def get_cifar(subset: int):
 @dataclass
 class ResNetTrainingArgs:
     batch_size: int = 64
-    epochs: int = 3
+    epochs: int = 5
     learning_rate: float = 1e-3
     n_classes: int = 10
     subset: int = 10
@@ -866,33 +866,32 @@ class ResNetTrainingArgs:
 
 # %%
 class ResNetTrainer:
-    def __init__(self, batch_size, epochs, learning_rate, n_classes, subset):
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.n_classes = n_classes
-        self.subset = subset
+    def __init__(self, args):
+        self.args = args
+        self.batch_size = args.batch_size
+        self.epochs = args.epochs
+        self.learning_rate = args.learning_rate
+        self.n_classes = args.n_classes
+        self.subset = args.subset
 
         self.device = "mps"
 
-        cifar_trainset, cifar_testset = get_cifar(subset=subset)
+        self.trainset, self.testset = get_cifar(subset=self.subset)
         self.train_dataset = DataLoader(
-            cifar_trainset, batch_size=batch_size, shuffle=True
+            self.trainset, batch_size=self.batch_size, shuffle=True
         )
         self.test_dataset = DataLoader(
-            cifar_testset, batch_size=batch_size, shuffle=True
+            self.testset, batch_size=self.batch_size, shuffle=True
         )
 
-        self.n_train_data = len(cifar_trainset)
-
-        self.resnet = get_resnet_for_feature_extraction(n_classes=n_classes)
+        self.resnet = get_resnet_for_feature_extraction(n_classes=self.n_classes)
         self.resnet.to(self.device)
-        self.optimizer = t.optim.Adam(self.resnet.parameters(), lr=learning_rate)
+        self.optimizer = t.optim.Adam(self.resnet.parameters(), lr=self.learning_rate)
 
         self.loss_fun = F.cross_entropy
-        # self.logged_variables = {"loss": [], "accuracy": []}
-        self.loss = []
-        self.accuracy = []
+        self.logged_variables = {"loss": [], "accuracy": []}
+        # self.loss = []
+        # self.accuracy = []
 
     def _train(self):
         model.train()
@@ -900,21 +899,22 @@ class ResNetTrainer:
         for batch_x, batch_y in tqdm(self.train_dataset):
             pred_y_logits = self.resnet(batch_x.to(self.device))
             loss = self.loss_fun(pred_y_logits, batch_y.to(self.device))
-            self.loss.append(loss.item())
+            self.logged_variables["loss"].append(loss.item())
             loss.backward()
             self.optimizer.step()
+            self.optimizer.zero_grad()
 
     def _test(self):
         model.eval()
         all_results = []
-        for batch_x, batch_y in tqdm(self.train_dataset):
+        for batch_x, batch_y in tqdm(self.test_dataset):
             pred_y_logits = self.resnet(batch_x.to(self.device))
             pred_y = t.argmax(pred_y_logits, dim=1)
             all_results.append((pred_y == batch_y.to(self.device)))
 
         result_acc = t.concat(all_results).to("cpu")
         accuracy = t.sum(result_acc) / len(result_acc)
-        self.accuracy.append(accuracy)
+        self.logged_variables["accuracy"].append(accuracy)
 
     def train(self):
         for epoch in range(self.epochs):
@@ -922,10 +922,74 @@ class ResNetTrainer:
             self._test()
 
 
-args = ResNetTrainingArgs()
-trainer = ResNetTrainer(**args.__dict__)
+args = ResNetTrainingArgs(epochs=3)
+trainer = ResNetTrainer(args)
 trainer.train()
 plot_train_loss_and_test_accuracy_from_trainer(
     trainer, title="Feature extraction with ResNet34"
 )
+# %%
+# actual solution
+
+
+def train(args: ResNetTrainingArgs) -> ResNet34:
+    """
+    Performs feature extraction on ResNet.
+    """
+    model = get_resnet_for_feature_extraction(args.n_classes).to(device)
+
+    trainset, testset = get_cifar(subset=args.subset)
+    trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
+    testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=False)
+
+    optimizer = t.optim.Adam(model.out_layers[-1].parameters(), lr=args.learning_rate)
+
+    loss_list = []
+    accuracy_list = []
+
+    for epoch in tqdm(range(args.epochs)):
+        # Training loop
+        model.train()
+        for imgs, labels in tqdm(trainloader, desc=f"Epoch {epoch+1}"):
+            imgs = imgs.to(device)
+            labels = labels.to(device)
+            logits = model(imgs)
+            loss = F.cross_entropy(logits, labels)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            loss_list.append(loss.item())
+
+        # Validation loop
+        model.eval()
+        num_correct_classifications = 0
+        for imgs, labels in testloader:
+            imgs = imgs.to(device)
+            labels = labels.to(device)
+            with t.inference_mode():
+                logits = model(imgs)
+            predictions = t.argmax(logits, dim=1)
+            num_correct_classifications += (predictions == labels).sum().item()
+        accuracy = num_correct_classifications / len(testset)
+        accuracy_list.append(accuracy)
+
+    line(
+        loss_list,
+        yaxis_range=[0, max(loss_list) + 0.1],
+        labels={"x": "Num batches seen", "y": "Cross entropy loss"},
+        title="SimpleMLP training on MNIST",
+        width=700,
+    )
+    line(
+        accuracy_list,
+        yaxis_range=[0, 1],
+        labels={"x": "Num epochs", "y": "Accuracy"},
+        title="SimpleMLP test accuracy on MNIST",
+        width=700,
+    )
+    return model
+
+
+args = ResNetTrainingArgs()
+model = train(args)
 # %%
