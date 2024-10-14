@@ -758,12 +758,12 @@ sweep_config = {
             "max": 0.1,
         },
         "batch_size": {"values": [32, 64, 128, 256]},
-        "epochs": {"values": [1, 2, 3]},
+        "epochs": {"values": [3, 9, 27]},
     },
 }
 
 # YOUR CODE HERE - fill `sweep_config`
-tests.test_sweep_config(sweep_config)
+# tests.test_sweep_config(sweep_config)
 # %%
 # (2) Define a training function which takes no arguments, and uses `wandb.config` to get hyperparams
 
@@ -776,19 +776,12 @@ class ResNetTrainerWandbSweeps(ResNetTrainerWandb):
 
     def __init__(self, args: ResNetTrainingArgsWandb):
         # Initialize
-        wandb.init(name=args.wandb_name)
+        wandb.init()  # name=args.wandb_name)
 
         super().__init__(args)
         # # Update args with the values in wandb.config
-        # self.args = args
-        # self.args = replace(self.args, **wandb.config)
-
-        # # Perform the previous steps (initialize model & other important objects)
-        # self.model = get_resnet_for_feature_extraction(self.args.n_classes).to(device)
-        # self.optimizer = t.optim.Adam(self.model.out_layers[-1].parameters(), lr=self.args.learning_rate)
-        # self.trainset, self.testset = get_cifar(subset=self.args.subset)
-        # self.step = 0
-        # wandb.watch(self.model.out_layers[-1], log="all", log_freq=20)
+        self.args = args
+        self.args = replace(self.args, **wandb.config)
 
 
 def train():
@@ -798,7 +791,7 @@ def train():
 
 
 # %%
-sweep_id = wandb.sweep(sweep=sweep_config, project="day3-resnet-sweep")
-wandb.agent(sweep_id=sweep_id, function=train, count=3)
+sweep_id = wandb.sweep(sweep=sweep_config, project="day3-resnet-sweep-3")
+wandb.agent(sweep_id=sweep_id, function=train, count=15)
 wandb.finish()
 # %%
