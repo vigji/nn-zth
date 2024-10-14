@@ -343,10 +343,18 @@ def tensor(array: Arr, requires_grad=False) -> Tensor:
 def log_forward(x: Tensor) -> Tensor:
     '''Performs np.log on a Tensor object.'''
     
-    log_vals = np.log(x.array)
+    log_val = np.log(x.array)
 
-    return Tensor(log_vals, requires_grad=grad_tracking_enabled)
+    recipe = Recipe(args=(x.array,), func=np.log, kwargs=dict(), parents={0: x})
 
+    out = Tensor(log_val, requires_grad=grad_tracking_enabled and x.requires_grad)
+
+    if out.requires_grad:
+        out.recipe = recipe
+
+    return out
+
+# %%
 
 log = log_forward
 tests.test_log(Tensor, log_forward)
@@ -354,6 +362,46 @@ tests.test_log_no_grad(Tensor, log_forward)
 a = Tensor([1], requires_grad=True)
 grad_tracking_enabled = False
 b = log_forward(a)
+grad_tracking_enabled = True
+assert not b.requires_grad, "should not require grad if grad tracking globally disabled"
+assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
+# %%
+
+def multiply_forward(a: Tensor | list, b: Tensor | list) -> Tensor:
+    '''Performs np.multiply on a Tensor object.'''
+    assert isinstance(a, Tensor) or isinstance(b, Tensor)
+
+    if isinstance(a, Tensor) and not isinstance(b, Tensor):
+        b = Tensor(b, requires_grad=grad_tracking_enabled)
+        args=(a.array, )
+        parents = {0: a}
+    if isinstance(b, Tensor) and not isinstance(a, Tensor):
+        a = Tensor(a, requires_grad=grad_tracking_enabled)
+        args=(b.array, )
+        parents = {0: b}
+    else:
+        args=(a.array, b.array)
+        parents = {0: a, 1: b}
+
+    requires_grad = grad_tracking_enabled and a.requires_grad or b.requires_grad
+
+    out_val = a.array * b.array
+    out = Tensor(out_val, requires_grad=requires_grad)
+    if requires_grad:
+        recipe = Recipe(args=args, func=np.multiply, kwargs=dict(), parents=parents)
+        out.recipe = recipe
+
+    return out
+
+
+multiply = multiply_forward
+tests.test_multiply(Tensor, multiply_forward)
+tests.test_multiply_no_grad(Tensor, multiply_forward)
+tests.test_multiply_float(Tensor, multiply_forward)
+a = Tensor([2], requires_grad=True)
+b = Tensor([3], requires_grad=True)
+grad_tracking_enabled = False
+b = multiply_forward(a, b)
 grad_tracking_enabled = True
 assert not b.requires_grad, "should not require grad if grad tracking globally disabled"
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
