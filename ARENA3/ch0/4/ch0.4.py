@@ -370,22 +370,30 @@ assert b.recipe is None, "should not create recipe if grad tracking globally dis
 def multiply_forward(a: Tensor | list, b: Tensor | list) -> Tensor:
     '''Performs np.multiply on a Tensor object.'''
     assert isinstance(a, Tensor) or isinstance(b, Tensor)
+    print("here", a, b)
 
     if isinstance(a, Tensor) and not isinstance(b, Tensor):
-        b = Tensor(b, requires_grad=grad_tracking_enabled)
-        args=(a.array, )
+        # b = Tensor(b, requires_grad=grad_tracking_enabled)
+        args=(a.array, b)
         parents = {0: a}
-    if isinstance(b, Tensor) and not isinstance(a, Tensor):
-        a = Tensor(a, requires_grad=grad_tracking_enabled)
-        args=(b.array, )
-        parents = {0: b}
+        out_val = a.array * b
+        tensor_requires_grad = a.requires_grad
+    elif isinstance(b, Tensor) and not isinstance(a, Tensor):
+        # a = Tensor(a, requires_grad=grad_tracking_enabled)
+        args=(a, b.array)
+        parents = {1: b}
+        out_val = a * b.array
+        tensor_requires_grad = b.requires_grad
     else:
         args=(a.array, b.array)
         parents = {0: a, 1: b}
+        out_val = a.array * b.array
+        tensor_requires_grad = a.requires_grad or b.requires_grad
+    
 
-    requires_grad = grad_tracking_enabled and a.requires_grad or b.requires_grad
+    requires_grad = grad_tracking_enabled and tensor_requires_grad
 
-    out_val = a.array * b.array
+    
     out = Tensor(out_val, requires_grad=requires_grad)
     if requires_grad:
         recipe = Recipe(args=args, func=np.multiply, kwargs=dict(), parents=parents)
@@ -406,3 +414,43 @@ grad_tracking_enabled = True
 assert not b.requires_grad, "should not require grad if grad tracking globally disabled"
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
 # %%
+
+def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
+    '''
+    numpy_func: Callable
+        takes any number of positional arguments, some of which may be NumPy arrays, and 
+        any number of keyword arguments which we aren't allowing to be NumPy arrays at 
+        present. It returns a single NumPy array.
+
+    is_differentiable: 
+        if True, numpy_func is differentiable with respect to some input argument, so we 
+        may need to track information in a Recipe. If False, we definitely don't need to
+        track information.
+
+    Return: Callable
+        It has the same signature as numpy_func, except wherever there was a NumPy array, 
+        this has a Tensor instead.
+    '''
+
+    def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
+        pass
+
+    return tensor_func
+
+
+def _sum(x: Arr, dim=None, keepdim=False) -> Arr:
+    # need to be careful with sum, because kwargs have different names in torch and numpy
+    return np.sum(x, axis=dim, keepdims=keepdim)
+
+
+log = wrap_forward_fn(np.log)
+multiply = wrap_forward_fn(np.multiply)
+eq = wrap_forward_fn(np.equal, is_differentiable=False)
+sum = wrap_forward_fn(_sum)
+
+tests.test_log(Tensor, log)
+tests.test_log_no_grad(Tensor, log)
+tests.test_multiply(Tensor, multiply)
+tests.test_multiply_no_grad(Tensor, multiply)
+tests.test_multiply_float(Tensor, multiply)
+tests.test_sum(Tensor)
