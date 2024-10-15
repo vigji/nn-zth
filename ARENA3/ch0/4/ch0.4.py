@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, TypeAlias
 
 import numpy as np
+from regex import R
 import torch as t
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -373,26 +374,18 @@ def multiply_forward(a: Tensor | list, b: Tensor | list) -> Tensor:
     print("here", a, b)
 
     if isinstance(a, Tensor) and not isinstance(b, Tensor):
-        # b = Tensor(b, requires_grad=grad_tracking_enabled)
-        args=(a.array, b)
-        parents = {0: a}
-        out_val = a.array * b
         tensor_requires_grad = a.requires_grad
     elif isinstance(b, Tensor) and not isinstance(a, Tensor):
-        # a = Tensor(a, requires_grad=grad_tracking_enabled)
-        args=(a, b.array)
-        parents = {1: b}
-        out_val = a * b.array
         tensor_requires_grad = b.requires_grad
     else:
-        args=(a.array, b.array)
-        parents = {0: a, 1: b}
-        out_val = a.array * b.array
         tensor_requires_grad = a.requires_grad or b.requires_grad
-    
-
     requires_grad = grad_tracking_enabled and tensor_requires_grad
 
+    arg0 = a.array if isinstance(a, Tensor) else a
+    arg1 = b.array if isinstance(b, Tensor) else b
+    out_val = arg0 * arg1
+    parents = {idx: arr for idx, arr in enumerate([a, b]) if isinstance(arr, Tensor)}
+    args = (arg0, arg1)
     
     out = Tensor(out_val, requires_grad=requires_grad)
     if requires_grad:
@@ -433,7 +426,29 @@ def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
     '''
 
     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
-        pass
+        numpy_args = []
+        parents = {}
+        args_require_grad = False
+        for i, arg in enumerate(args):
+            if isinstance(arg, Tensor):
+                new_arg = arg.array 
+                parents[i] =  arg
+                args_require_grad = args_require_grad or arg.requires_grad
+            else:
+                new_arg = arg
+            numpy_args.append(new_arg)
+        numpy_args = tuple(numpy_args)
+        requires_grad = (is_differentiable and grad_tracking_enabled) and args_require_grad
+
+        out_val = numpy_func(*numpy_args, **kwargs)
+        out_tensor = Tensor(out_val, requires_grad=requires_grad)
+
+        if requires_grad:
+            recipe = Recipe(args=numpy_args, func=numpy_func, kwargs=kwargs, parents=parents)
+            out_tensor.recipe = recipe
+            
+        return out_tensor
+
 
     return tensor_func
 
@@ -454,3 +469,106 @@ tests.test_multiply(Tensor, multiply)
 tests.test_multiply_no_grad(Tensor, multiply)
 tests.test_multiply_float(Tensor, multiply)
 tests.test_sum(Tensor)
+# %%
+
+class Node:
+    def __init__(self, *children):
+        self.children = list(children)
+
+
+def get_children(node: Node) -> [Node]:
+    return node.children
+
+
+def topological_sort(node: Node, get_children: Callable) -> [Node]:
+    '''
+    Return a list of node's descendants in reverse topological order from future to past (i.e. `node` should be last).
+
+    Should raise an error if the graph with `node` as root is not in fact acyclic.
+    '''
+    # SOLUTION
+
+    result: [Node] = [] # stores the list of nodes to be returned (in reverse topological order)
+    perm: set[Node] = set() # same as `result`, but as a set (faster to check for membership)
+    temp: set[Node] = set() # keeps track of previously visited nodes (to detect cyclicity)
+
+    def visit(cur: Node):
+        '''
+        Recursive function which visits all the children of the current node, and appends them all
+        to `result` in the order they were found.
+        '''
+        if cur in perm:
+            return
+        if cur in temp:
+            raise ValueError("Not a DAG!")
+        temp.add(cur)
+
+        for next in get_children(cur):
+            visit(next)
+
+        result.append(cur)
+        perm.add(cur)
+        temp.remove(cur)
+
+    visit(node)
+    return result
+
+# %%
+tests.test_topological_sort_linked_list(topological_sort)
+tests.test_topological_sort_branching(topological_sort)
+tests.test_topological_sort_rejoining(topological_sort)
+tests.test_topological_sort_cyclic(topological_sort)
+# %%
+def sorted_computational_graph(tensor: Tensor) -> [Tensor]:
+    '''
+    For a given tensor, return a list of Tensors that make up the nodes of the given Tensor's computational graph, 
+    in reverse topological order (i.e. `tensor` should be first).
+    '''
+    def _get_children(tensor):
+        if not tensor.recipe:
+            return []
+        return list(tensor.recipe.parents.values())
+
+
+    return topological_sort(tensor, _get_children)[::-1]
+
+
+a = Tensor([1], requires_grad=True)
+b = Tensor([2], requires_grad=True)
+c = Tensor([3], requires_grad=True)
+d = a * b
+e = c.log()
+f = d * e
+g = f.log()
+name_lookup = {a: "a", b: "b", c: "c", d: "d", e: "e", f: "f", g: "g"}
+
+print([name_lookup[t] for t in sorted_computational_graph(g)])
+# %%
+# Finally backprop!
+
+def backprop(end_node: Tensor, end_grad: Tensor | None = None) -> None:
+    '''Accumulates gradients in the grad field of each leaf node.
+
+    tensor.backward() is equivalent to backprop(tensor).
+
+    end_node: 
+        The rightmost node in the computation graph. 
+        If it contains more than one element, end_grad must be provided.
+    end_grad: 
+        A tensor of the same shape as end_node. 
+        Set to 1 if not specified and end_node has only one element.
+    '''
+    L = end_node.array * end_grad
+
+    nodes_list = sorted_computational_graph(end_node)
+    
+    for node in nodes_list:
+        subnodes = sorted_computational_graph(node)
+
+
+
+tests.test_backprop(Tensor)
+tests.test_backprop_branching(Tensor)
+tests.test_backprop_requires_grad_false(Tensor)
+tests.test_backprop_float_arg(Tensor)
+tests.test_backprop_shared_parent(Tensor)
