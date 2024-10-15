@@ -558,17 +558,51 @@ def backprop(end_node: Tensor, end_grad: Tensor | None = None) -> None:
         A tensor of the same shape as end_node. 
         Set to 1 if not specified and end_node has only one element.
     '''
-    L = end_node.array * end_grad
-
-    nodes_list = sorted_computational_graph(end_node)
+    if len(end_node) <= 1:
+        assert end_grad is not None
+    if end_grad is None:
+        end_grad = 1
+    if isinstance(end_grad, Tensor):
+        end_grad = end_grad.array
     
-    for node in nodes_list:
-        subnodes = sorted_computational_graph(node)
+    recipe = end_node.recipe
+
+    if recipe:
+
+        for parent_i, parent in recipe.parents.items():
+
+            back_fun = BACK_FUNCS.get_back_func(recipe.func, parent_i) 
+            new_grad = Tensor(back_fun(end_grad, end_node, *recipe.args))
+            
+            if parent.recipe is None and parent.requires_grad: # leaf nodes requiring gradient:
+                if parent.grad is not None:
+                    grad_val = (parent.grad if not isinstance(parent.grad, Tensor) else parent.grad.array) + (new_grad if not isinstance(new_grad, Tensor) else new_grad.array)
+                    parent.grad = Tensor(grad_val)
+                else:
+                    parent.grad = new_grad
 
 
+            backprop(parent, end_grad=new_grad)
 
+
+a = 2
+b = Tensor([1, 2, 3], requires_grad=True)
+c = 3
+d = a * b
+e = b * c
+f = d * e
+f.backward(end_grad=np.array([1.0, 1.0, 1.0]))
+assert f.grad is None
+assert b.grad is not None
+# print(b.grad.array)
+assert np.allclose(
+    b.grad.array, np.array([12.0, 24.0, 36.0])
+), "Multiple nodes may have the same parent."
+
+# %%
 tests.test_backprop(Tensor)
 tests.test_backprop_branching(Tensor)
 tests.test_backprop_requires_grad_false(Tensor)
 tests.test_backprop_float_arg(Tensor)
 tests.test_backprop_shared_parent(Tensor)
+# %%
