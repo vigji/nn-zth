@@ -158,7 +158,9 @@ class BackwardFuncLookup:
     def __init__(self) -> None:
         self.linking_dict = dict()
 
-    def add_back_func(self, forward_fn: Callable, arg_position: int, back_fn: Callable) -> None:
+    def add_back_func(
+        self, forward_fn: Callable, arg_position: int, back_fn: Callable
+    ) -> None:
         self.linking_dict[(forward_fn, arg_position)] = back_fn
 
     def get_back_func(self, forward_fn: Callable, arg_position: int) -> Callable:
@@ -179,10 +181,11 @@ print("Tests passed - BackwardFuncLookup class is working as expected!")
 
 Arr = np.ndarray
 
+
 class Tensor:
-    '''
+    """
     A drop-in replacement for torch.Tensor supporting a subset of features.
-    '''
+    """
 
     # array: Arr
     "The underlying array. Can be shared between multiple Tensors."
@@ -314,38 +317,45 @@ class Tensor:
 
     @property
     def is_leaf(self):
-        '''Same as https://pytorch.org/docs/stable/generated/torch.Tensor.is_leaf.html'''
+        """Same as https://pytorch.org/docs/stable/generated/torch.Tensor.is_leaf.html"""
         if self.requires_grad and self.recipe and self.recipe.parents:
             return False
         return True
 
     def __bool__(self):
         if np.array(self.shape).prod() != 1:
-            raise RuntimeError("bool value of Tensor with more than one value is ambiguous")
+            raise RuntimeError(
+                "bool value of Tensor with more than one value is ambiguous"
+            )
         return bool(self.item())
 
+
 def empty(*shape: int) -> Tensor:
-    '''Like torch.empty.'''
+    """Like torch.empty."""
     return Tensor(np.empty(shape))
 
+
 def zeros(*shape: int) -> Tensor:
-    '''Like torch.zeros.'''
+    """Like torch.zeros."""
     return Tensor(np.zeros(shape))
 
+
 def arange(start: int, end: int, step=1) -> Tensor:
-    '''Like torch.arange(start, end).'''
+    """Like torch.arange(start, end)."""
     return Tensor(np.arange(start, end, step=step))
 
+
 def tensor(array: Arr, requires_grad=False) -> Tensor:
-    '''Like torch.tensor.'''
+    """Like torch.tensor."""
     return Tensor(array, requires_grad=requires_grad)
 
 
 # Implementing custom functions:
 
+
 def log_forward(x: Tensor) -> Tensor:
-    '''Performs np.log on a Tensor object.'''
-    
+    """Performs np.log on a Tensor object."""
+
     log_val = np.log(x.array)
 
     recipe = Recipe(args=(x.array,), func=np.log, kwargs=dict(), parents={0: x})
@@ -356,6 +366,7 @@ def log_forward(x: Tensor) -> Tensor:
         out.recipe = recipe
 
     return out
+
 
 # %%
 
@@ -370,8 +381,9 @@ assert not b.requires_grad, "should not require grad if grad tracking globally d
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
 # %%
 
+
 def multiply_forward(a: Tensor | list, b: Tensor | list) -> Tensor:
-    '''Performs np.multiply on a Tensor object.'''
+    """Performs np.multiply on a Tensor object."""
     assert isinstance(a, Tensor) or isinstance(b, Tensor)
     print("here", a, b)
 
@@ -388,7 +400,7 @@ def multiply_forward(a: Tensor | list, b: Tensor | list) -> Tensor:
     out_val = arg0 * arg1
     parents = {idx: arr for idx, arr in enumerate([a, b]) if isinstance(arr, Tensor)}
     args = (arg0, arg1)
-    
+
     out = Tensor(out_val, requires_grad=requires_grad)
     if requires_grad:
         recipe = Recipe(args=args, func=np.multiply, kwargs=dict(), parents=parents)
@@ -410,22 +422,23 @@ assert not b.requires_grad, "should not require grad if grad tracking globally d
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
 # %%
 
+
 def wrap_forward_fn_mine(numpy_func: Callable, is_differentiable=True) -> Callable:
-    '''
+    """
     numpy_func: Callable
-        takes any number of positional arguments, some of which may be NumPy arrays, and 
-        any number of keyword arguments which we aren't allowing to be NumPy arrays at 
+        takes any number of positional arguments, some of which may be NumPy arrays, and
+        any number of keyword arguments which we aren't allowing to be NumPy arrays at
         present. It returns a single NumPy array.
 
-    is_differentiable: 
-        if True, numpy_func is differentiable with respect to some input argument, so we 
+    is_differentiable:
+        if True, numpy_func is differentiable with respect to some input argument, so we
         may need to track information in a Recipe. If False, we definitely don't need to
         track information.
 
     Return: Callable
-        It has the same signature as numpy_func, except wherever there was a NumPy array, 
+        It has the same signature as numpy_func, except wherever there was a NumPy array,
         this has a Tensor instead.
-    '''
+    """
 
     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
         numpy_args = []
@@ -433,43 +446,47 @@ def wrap_forward_fn_mine(numpy_func: Callable, is_differentiable=True) -> Callab
         args_require_grad = False
         for i, arg in enumerate(args):
             if isinstance(arg, Tensor):
-                new_arg = arg.array 
-                parents[i] =  arg
+                new_arg = arg.array
+                parents[i] = arg
                 args_require_grad = args_require_grad or arg.requires_grad
             else:
                 new_arg = arg
             numpy_args.append(new_arg)
         numpy_args = tuple(numpy_args)
-        requires_grad = (is_differentiable and grad_tracking_enabled) and args_require_grad
+        requires_grad = (
+            is_differentiable and grad_tracking_enabled
+        ) and args_require_grad
 
         out_val = numpy_func(*numpy_args, **kwargs)
         out_tensor = Tensor(out_val, requires_grad=requires_grad)
 
         if requires_grad:
-            recipe = Recipe(args=numpy_args, func=numpy_func, kwargs=kwargs, parents=parents)
+            recipe = Recipe(
+                args=numpy_args, func=numpy_func, kwargs=kwargs, parents=parents
+            )
             out_tensor.recipe = recipe
-            
-        return out_tensor
 
+        return out_tensor
 
     return tensor_func
 
+
 def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
-    '''
+    """
     numpy_func: Callable
-        takes any number of positional arguments, some of which may be NumPy arrays, and 
-        any number of keyword arguments which we aren't allowing to be NumPy arrays at 
+        takes any number of positional arguments, some of which may be NumPy arrays, and
+        any number of keyword arguments which we aren't allowing to be NumPy arrays at
         present. It returns a single NumPy array.
 
-    is_differentiable: 
-        if True, numpy_func is differentiable with respect to some input argument, so we 
+    is_differentiable:
+        if True, numpy_func is differentiable with respect to some input argument, so we
         may need to track information in a Recipe. If False, we definitely don't need to
         track information.
 
     Return: Callable
-        It has the same signature as numpy_func, except wherever there was a NumPy array, 
+        It has the same signature as numpy_func, except wherever there was a NumPy array,
         this has a Tensor instead.
-    '''
+    """
 
     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
         # SOLUTION
@@ -481,9 +498,11 @@ def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
         out_arr = numpy_func(*arg_arrays, **kwargs)
 
         # Find whether the tensor requires grad (need to check if ANY of the inputs do)
-        requires_grad = grad_tracking_enabled and is_differentiable and any([
-            isinstance(a, Tensor) and a.requires_grad for a in args
-        ])
+        requires_grad = (
+            grad_tracking_enabled
+            and is_differentiable
+            and any([isinstance(a, Tensor) and a.requires_grad for a in args])
+        )
 
         # Create the output tensor from the underlying data and the requires_grad flag
         out = Tensor(out_arr, requires_grad)
@@ -516,6 +535,7 @@ tests.test_multiply_float(Tensor, multiply)
 tests.test_sum(Tensor)
 # %%
 
+
 class Node:
     def __init__(self, *children):
         self.children = list(children)
@@ -526,22 +546,28 @@ def get_children(node: Node) -> [Node]:
 
 
 def topological_sort(node: Node, get_children: Callable) -> [Node]:
-    '''
+    """
     Return a list of node's descendants in reverse topological order from future to past (i.e. `node` should be last).
 
     Should raise an error if the graph with `node` as root is not in fact acyclic.
-    '''
+    """
     # SOLUTION
 
-    result: [Node] = [] # stores the list of nodes to be returned (in reverse topological order)
-    perm: set[Node] = set() # same as `result`, but as a set (faster to check for membership)
-    temp: set[Node] = set() # keeps track of previously visited nodes (to detect cyclicity)
+    result: [
+        Node
+    ] = []  # stores the list of nodes to be returned (in reverse topological order)
+    perm: set[
+        Node
+    ] = set()  # same as `result`, but as a set (faster to check for membership)
+    temp: set[
+        Node
+    ] = set()  # keeps track of previously visited nodes (to detect cyclicity)
 
     def visit(cur: Node):
-        '''
+        """
         Recursive function which visits all the children of the current node, and appends them all
         to `result` in the order they were found.
-        '''
+        """
         if cur in perm:
             return
         if cur in temp:
@@ -558,22 +584,25 @@ def topological_sort(node: Node, get_children: Callable) -> [Node]:
     visit(node)
     return result
 
+
 # %%
 tests.test_topological_sort_linked_list(topological_sort)
 tests.test_topological_sort_branching(topological_sort)
 tests.test_topological_sort_rejoining(topological_sort)
 tests.test_topological_sort_cyclic(topological_sort)
+
+
 # %%
 def sorted_computational_graph(tensor: Tensor) -> [Tensor]:
-    '''
-    For a given tensor, return a list of Tensors that make up the nodes of the given Tensor's computational graph, 
+    """
+    For a given tensor, return a list of Tensors that make up the nodes of the given Tensor's computational graph,
     in reverse topological order (i.e. `tensor` should be first).
-    '''
+    """
+
     def _get_children(tensor):
         if not tensor.recipe:
             return []
         return list(tensor.recipe.parents.values())
-
 
     return topological_sort(tensor, _get_children)[::-1]
 
@@ -591,57 +620,59 @@ print([name_lookup[t] for t in sorted_computational_graph(g)])
 # %%
 # Finally backprop!
 
+
 def backprop_mine(end_node: Tensor, end_grad: Tensor | None = None) -> None:
-    '''Accumulates gradients in the grad field of each leaf node.
+    """Accumulates gradients in the grad field of each leaf node.
 
     tensor.backward() is equivalent to backprop(tensor).
 
-    end_node: 
-        The rightmost node in the computation graph. 
+    end_node:
+        The rightmost node in the computation graph.
         If it contains more than one element, end_grad must be provided.
-    end_grad: 
-        A tensor of the same shape as end_node. 
+    end_grad:
+        A tensor of the same shape as end_node.
         Set to 1 if not specified and end_node has only one element.
-    '''
+    """
     if end_node.ndim <= 1:
         assert end_grad is not None
     if end_grad is None:
         end_grad = 1
     if isinstance(end_grad, Tensor):
         end_grad = end_grad.array
-    
+
     recipe = end_node.recipe
 
     if recipe:
-
         for parent_i, parent in recipe.parents.items():
-
-            back_fun = BACK_FUNCS.get_back_func(recipe.func, parent_i) 
+            back_fun = BACK_FUNCS.get_back_func(recipe.func, parent_i)
             new_grad = Tensor(back_fun(end_grad, end_node, *recipe.args))
-            
-            if parent.recipe is None and parent.requires_grad: # leaf nodes requiring gradient:
+
+            if (
+                parent.recipe is None and parent.requires_grad
+            ):  # leaf nodes requiring gradient:
                 if parent.grad is not None:
-                    grad_val = parent.grad.array + (new_grad if not isinstance(new_grad, Tensor) else new_grad.array)
+                    grad_val = parent.grad.array + (
+                        new_grad if not isinstance(new_grad, Tensor) else new_grad.array
+                    )
                     parent.grad = Tensor(grad_val)
                 else:
                     parent.grad = new_grad
-
 
             backprop_mine(parent, end_grad=new_grad)
 
 
 def backprop(end_node: Tensor, end_grad: Tensor | None = None) -> None:
-    '''Accumulates gradients in the grad field of each leaf node.
+    """Accumulates gradients in the grad field of each leaf node.
 
     tensor.backward() is equivalent to backprop(tensor).
 
-    end_node: 
-        The rightmost node in the computation graph. 
+    end_node:
+        The rightmost node in the computation graph.
         If it contains more than one element, end_grad must be provided.
-    end_grad: 
-        A tensor of the same shape as end_node. 
+    end_grad:
+        A tensor of the same shape as end_node.
         Set to 1 if not specified and end_node has only one element.
-    '''
+    """
     # SOLUTION
 
     # Get value of end_grad_arr
@@ -652,7 +683,6 @@ def backprop(end_node: Tensor, end_grad: Tensor | None = None) -> None:
 
     # Iterate through the computational graph, using your sorting function
     for node in sorted_computational_graph(end_node):
-
         # Get the outgradient from the grads dict
         outgrad = grads.pop(node)
         # We only store the gradients if this node is a leaf & requires_grad is true
@@ -670,12 +700,13 @@ def backprop(end_node: Tensor, end_grad: Tensor | None = None) -> None:
 
         # If node has a recipe, then we iterate through parents (which is a dict of {arg_posn: tensor})
         for argnum, parent in node.recipe.parents.items():
-
             # Get the backward function corresponding to the function that created this node
             back_fn = BACK_FUNCS.get_back_func(node.recipe.func, argnum)
 
             # Use this backward function to calculate the gradient
-            in_grad = back_fn(outgrad, node.array, *node.recipe.args, **node.recipe.kwargs)
+            in_grad = back_fn(
+                outgrad, node.array, *node.recipe.args, **node.recipe.kwargs
+            )
 
             # Add the gradient to this node in the dictionary `grads`
             # Note that we only set node.grad (from the grads dict) in the code block above
@@ -708,9 +739,11 @@ tests.test_backprop_shared_parent(Tensor)
 # %%
 # Non differentiable:
 
+
 def _argmax(x: Arr, dim=None, keepdim=False):
-    '''Like torch.argmax.'''
+    """Like torch.argmax."""
     return np.expand_dims(np.argmax(x, axis=dim), axis=([] if dim is None else dim))
+
 
 argmax = wrap_forward_fn(_argmax, is_differentiable=False)
 
@@ -721,8 +754,9 @@ assert b.recipe is None
 assert b.item() == 3
 # %%
 
+
 def negative_back(grad_out: Arr, out: Arr, x: Arr) -> Arr:
-    '''Backward function for f(x) = -x elementwise.'''
+    """Backward function for f(x) = -x elementwise."""
     return -grad_out
 
 
@@ -731,6 +765,7 @@ BACK_FUNCS.add_back_func(np.negative, 0, negative_back)
 
 tests.test_negative_back(Tensor)
 # %%
+
 
 def exp_back(grad_out: Arr, out: Arr, x: Arr) -> Arr:
     return grad_out * np.exp(grad_out)
@@ -741,17 +776,21 @@ BACK_FUNCS.add_back_func(np.exp, 0, exp_back)
 
 tests.test_exp_back(Tensor)
 
+
 # %%
 def reshape_back(grad_out: Arr, out: Arr, x: Arr, new_shape: tuple) -> Arr:
     return grad_out.reshape(x.shape)
+
 
 reshape = wrap_forward_fn(np.reshape)
 BACK_FUNCS.add_back_func(np.reshape, 0, reshape_back)
 
 tests.test_reshape_back(Tensor)
+
+
 # %%
 def invert_transposition(axes: tuple) -> tuple:
-    '''
+    """
     axes: tuple indicating a transition
 
     Returns: inverse of this transposition, i.e. the array `axes_inv` s.t. we have:
@@ -761,13 +800,12 @@ def invert_transposition(axes: tuple) -> tuple:
         (1, 0)    --> (1, 0)     # this is reversing a simple 2-element transposition
         (0, 2, 1) --> (0, 2, 1)  # also a 2-element transposition
         (1, 2, 0) --> (2, 0, 1)  # this is reversing the order of a 3-cycle
-    '''
+    """
     return [axes[a] for a in axes]
 
-def permute_back(grad_out: Arr, out: Arr, x: Arr, axes: tuple) -> Arr:
-    
-    return np.transpose(grad_out, invert_transposition(axes))
 
+def permute_back(grad_out: Arr, out: Arr, x: Arr, axes: tuple) -> Arr:
+    return np.transpose(grad_out, invert_transposition(axes))
 
 
 BACK_FUNCS.add_back_func(np.transpose, 0, permute_back)
@@ -775,21 +813,25 @@ permute = wrap_forward_fn(np.transpose)
 
 tests.test_permute_back(Tensor)
 
+
 # %%
 def expand_back(grad_out: Arr, out: Arr, x: Arr, new_shape: tuple) -> Arr:
     return unbroadcast(grad_out, x)
 
+
 def _expand(x: Arr, new_shape) -> Arr:
-    '''
+    """
     Like torch.expand, calling np.broadcast_to internally.
 
     Note torch.expand supports -1 for a dimension size meaning "don't change the size".
     np.broadcast_to does not natively support this.
-    '''
+    """
     n_dims_x = len(x.shape)
     n_dims_target = len(new_shape)
     n_new_dims = n_dims_target - n_dims_x
-    new_shape = tuple([x.shape[i - n_new_dims] if s == -1 else s for i, s in enumerate(new_shape)])
+    new_shape = tuple(
+        [x.shape[i - n_new_dims] if s == -1 else s for i, s in enumerate(new_shape)]
+    )
 
     return np.broadcast_to(x, new_shape)
 
@@ -801,8 +843,9 @@ tests.test_expand(Tensor)
 tests.test_expand_negative_length(Tensor)
 # %%
 
+
 def sum_back(grad_out: Arr, out: Arr, x: Arr, dim=None, keepdim=False):
-    '''Basic idea: repeat grad_out over the dims along which x was summed'''
+    """Basic idea: repeat grad_out over the dims along which x was summed"""
     # SOLUTION
 
     # If grad_out is a scalar, we need to make it a tensor (so we can expand it later)
@@ -820,8 +863,9 @@ def sum_back(grad_out: Arr, out: Arr, x: Arr, dim=None, keepdim=False):
     # Finally, we repeat grad_out along the dims over which x was summed
     return np.broadcast_to(grad_out, x.shape)
 
+
 def _sum(x: Arr, dim=None, keepdim=False) -> Arr:
-    '''Like torch.sum, calling np.sum internally.'''
+    """Like torch.sum, calling np.sum internally."""
     return np.sum(x, axis=dim, keepdims=keepdim)
 
 
@@ -836,30 +880,35 @@ tests.test_sum_nonscalar_grad_out(Tensor)
 
 Index = int | tuple[int, ...] | tuple[Arr] | tuple[Tensor]
 
+
 def coerce_index(index: Index) -> int | tuple[int, ...] | tuple[Arr]:
-    '''
+    """
     If index is of type signature `tuple[Tensor]`, converts it to `tuple[Arr]`.
-    '''
+    """
     if isinstance(index, tuple):
         return tuple([(i.array if isinstance(i, Tensor) else i) for i in index])
 
     return index
 
+
 tests.test_coerce_index(coerce_index, Tensor)
+
+
 # %%
 def _getitem(x: Arr, index: Index) -> Arr:
-    '''Like x[index] when x is a torch.Tensor.'''
+    """Like x[index] when x is a torch.Tensor."""
     if isinstance(x, Tensor):
         x = x.array
     return x[coerce_index(index)]
 
+
 def getitem_back(grad_out: Arr, out: Arr, x: Arr, index: Index):
-    '''
+    """
     Backwards function for _getitem.
 
     Hint: use np.add.at(a, indices, b)
     This function works just like a[indices] += b, except that it allows for repeated indices.
-    '''
+    """
     base = np.zeros(x.shape)
     np.add.at(base, coerce_index(index), grad_out)
 
@@ -880,14 +929,32 @@ add = wrap_forward_fn(np.add)
 subtract = wrap_forward_fn(np.subtract)
 true_divide = wrap_forward_fn(np.true_divide)
 
-BACK_FUNCS.add_back_func(np.add, 0, lambda grad_out, out, x, y: unbroadcast(grad_out, x))
-BACK_FUNCS.add_back_func(np.add, 1, lambda grad_out, out, x, y: unbroadcast(grad_out, y))
-BACK_FUNCS.add_back_func(np.subtract, 0, lambda grad_out, out, x, y: unbroadcast(grad_out, x))
-BACK_FUNCS.add_back_func(np.subtract, 1, lambda grad_out, out, x, y: -unbroadcast(grad_out, y))
-BACK_FUNCS.add_back_func(np.multiply, 0, lambda grad_out, out, x, y: unbroadcast(x * grad_out, x))
-BACK_FUNCS.add_back_func(np.multiply, 1, lambda grad_out, out, x, y: unbroadcast(y * grad_out, y))
-BACK_FUNCS.add_back_func(np.true_divide, 0, lambda grad_out, out, x, y: unbroadcast(grad_out / y, x))
-BACK_FUNCS.add_back_func(np.true_divide, 1, lambda grad_out, out, x, y: unbroadcast(grad_out *(-x/y**2), y))
+BACK_FUNCS.add_back_func(
+    np.add, 0, lambda grad_out, out, x, y: unbroadcast(grad_out, x)
+)
+BACK_FUNCS.add_back_func(
+    np.add, 1, lambda grad_out, out, x, y: unbroadcast(grad_out, y)
+)
+BACK_FUNCS.add_back_func(
+    np.subtract, 0, lambda grad_out, out, x, y: unbroadcast(grad_out, x)
+)
+BACK_FUNCS.add_back_func(
+    np.subtract, 1, lambda grad_out, out, x, y: -unbroadcast(grad_out, y)
+)
+BACK_FUNCS.add_back_func(
+    np.multiply, 0, lambda grad_out, out, x, y: unbroadcast(x * grad_out, x)
+)
+BACK_FUNCS.add_back_func(
+    np.multiply, 1, lambda grad_out, out, x, y: unbroadcast(y * grad_out, y)
+)
+BACK_FUNCS.add_back_func(
+    np.true_divide, 0, lambda grad_out, out, x, y: unbroadcast(grad_out / y, x)
+)
+BACK_FUNCS.add_back_func(
+    np.true_divide,
+    1,
+    lambda grad_out, out, x, y: unbroadcast(grad_out * (-x / y**2), y),
+)
 
 # subtract_back = lambda x: add(x)
 # multiply_back = lambda x: true_divide(x)
@@ -900,14 +967,15 @@ tests.test_subtract_broadcasted(Tensor)
 tests.test_truedivide_broadcasted(Tensor)
 # %%
 
+
 def add_(x: Tensor, other: Tensor, alpha: float = 1.0) -> Tensor:
-    '''Like torch.add_. Compute x += other * alpha in-place and return tensor.'''
+    """Like torch.add_. Compute x += other * alpha in-place and return tensor."""
     np.add(x.array, other.array * alpha, out=x.array)
     return x
 
 
 def safe_example():
-    '''This example should work properly.'''
+    """This example should work properly."""
     a = Tensor([0.0, 1.0, 2.0, 3.0], requires_grad=True)
     b = Tensor([2.0, 3.0, 4.0, 5.0], requires_grad=True)
     a.add_(b)
@@ -918,7 +986,7 @@ def safe_example():
 
 
 def unsafe_example():
-    '''This example is expected to compute the wrong gradients.'''
+    """This example is expected to compute the wrong gradients."""
     a = Tensor([0.0, 1.0, 2.0, 3.0], requires_grad=True)
     b = Tensor([2.0, 3.0, 4.0, 5.0], requires_grad=True)
     c = a * b
@@ -934,7 +1002,6 @@ def unsafe_example():
         print("Grad wrt b is WRONG!")
 
 
-
 safe_example()
 # unsafe_example()
 # %%
@@ -945,18 +1012,22 @@ b = Tensor([0, 1, 2, 3], requires_grad=True)
 assert a.grad is not None
 assert b.grad is not None
 assert np.allclose(a.grad.array, b.grad.array)
+
+
 # %%
 def maximum_back0(grad_out: Arr, out: Arr, x: Arr, y: Arr):
-    '''Backwards function for max(x, y) wrt x.'''
+    """Backwards function for max(x, y) wrt x."""
     # SOLUTION
-    bool_sum = ((x > y) + 0.5 * (x == y))
+    bool_sum = (x > y) + 0.5 * (x == y)
     return unbroadcast(grad_out * bool_sum, x)
 
+
 def maximum_back1(grad_out: Arr, out: Arr, x: Arr, y: Arr):
-    '''Backwards function for max(x, y) wrt y.'''
+    """Backwards function for max(x, y) wrt y."""
     # SOLUTION
-    bool_sum = ((x < y) + 0.5 * (x == y))
+    bool_sum = (x < y) + 0.5 * (x == y)
     return unbroadcast(grad_out * bool_sum, y)
+
 
 print(maximum_back0(1, 0, np.array([0, 1]), np.array([-1, 2])))
 maximum = wrap_forward_fn(np.maximum)
@@ -969,16 +1040,22 @@ tests.test_maximum_broadcasted(Tensor)
 
 # %%
 
+
 def relu(x: Tensor) -> Tensor:
-    '''Like torch.nn.function.relu(x, inplace=False).'''
+    """Like torch.nn.function.relu(x, inplace=False)."""
     return maximum(x, 0.0)
 
 
 tests.test_relu(Tensor)
+
+
 # %%
 def matmul2d_back0(grad_out: Arr, out: Arr, x: Arr, y: Arr) -> Arr:
     return grad_out @ y.T
 
+
 def matmul2d_back1(grad_out: Arr, out: Arr, x: Arr, y: Arr) -> Arr:
     return x.T @ grad_out
+
+
 # %%
