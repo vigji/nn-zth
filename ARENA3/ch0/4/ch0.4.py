@@ -164,6 +164,7 @@ class BackwardFuncLookup:
         self.linking_dict[(forward_fn, arg_position)] = back_fn
 
     def get_back_func(self, forward_fn: Callable, arg_position: int) -> Callable:
+        # print("getting back for: ", (forward_fn, arg_position), "got ", self.linking_dict[(forward_fn, arg_position)])
         return self.linking_dict[(forward_fn, arg_position)]
 
 
@@ -176,7 +177,7 @@ assert BACK_FUNCS.get_back_func(np.log, 0) == log_back
 assert BACK_FUNCS.get_back_func(np.multiply, 0) == multiply_back0
 assert BACK_FUNCS.get_back_func(np.multiply, 1) == multiply_back1
 
-print("Tests passed - BackwardFuncLookup class is working as expected!")
+# print("Tests passed - BackwardFuncLookup class is working as expected!")
 # %%
 
 Arr = np.ndarray
@@ -356,7 +357,7 @@ def tensor(array: Arr, requires_grad=False) -> Tensor:
 def log_forward(x: Tensor) -> Tensor:
     """Performs np.log on a Tensor object."""
 
-    log_val = np.log(x.array)
+    log_val = np.log(x.array)  # + 0.000000001)
 
     recipe = Recipe(args=(x.array,), func=np.log, kwargs=dict(), parents={0: x})
 
@@ -385,7 +386,6 @@ assert b.recipe is None, "should not create recipe if grad tracking globally dis
 def multiply_forward(a: Tensor | list, b: Tensor | list) -> Tensor:
     """Performs np.multiply on a Tensor object."""
     assert isinstance(a, Tensor) or isinstance(b, Tensor)
-    print("here", a, b)
 
     if isinstance(a, Tensor) and not isinstance(b, Tensor):
         tensor_requires_grad = a.requires_grad
@@ -616,7 +616,7 @@ f = d * e
 g = f.log()
 name_lookup = {a: "a", b: "b", c: "c", d: "d", e: "e", f: "f", g: "g"}
 
-print([name_lookup[t] for t in sorted_computational_graph(g)])
+# print([name_lookup[t] for t in sorted_computational_graph(g)])
 # %%
 # Finally backprop!
 
@@ -656,6 +656,8 @@ def backprop_mine(end_node: Tensor, end_grad: Tensor | None = None) -> None:
                     )
                     parent.grad = Tensor(grad_val)
                 else:
+                    # if new_grad.shape != parent.shape:
+                    # print("WARNING", new_grad.shape, parent.grad.shape)
                     parent.grad = new_grad
 
             backprop_mine(parent, end_grad=new_grad)
@@ -689,6 +691,7 @@ def backprop(end_node: Tensor, end_grad: Tensor | None = None) -> None:
         if node.is_leaf and node.requires_grad:
             # Add the gradient to this node's grad (need to deal with special case grad=None)
             if node.grad is None:
+                assert node.shape == outgrad.shape
                 node.grad = Tensor(outgrad)
             else:
                 node.grad.array += outgrad
@@ -725,7 +728,6 @@ f = d * e
 f.backward(end_grad=np.array([1.0, 1.0, 1.0]))
 assert f.grad is None
 assert b.grad is not None
-# print(b.grad.array)
 assert np.allclose(
     b.grad.array, np.array([12.0, 24.0, 36.0])
 ), "Multiple nodes may have the same parent."
@@ -801,7 +803,15 @@ def invert_transposition(axes: tuple) -> tuple:
         (0, 2, 1) --> (0, 2, 1)  # also a 2-element transposition
         (1, 2, 0) --> (2, 0, 1)  # this is reversing the order of a 3-cycle
     """
-    return [axes[a] for a in axes]
+    # SOLUTION
+
+    # Slick solution:
+    return tuple(np.argsort(axes))
+
+    # Slower solution, which makes it clearer what operation is happening:
+    # reversed_transposition_map = {num: idx for (idx, num) in enumerate(axes)}
+    # reversed_transposition = [reversed_transposition_map[idx] for idx in range(len(axes))]
+    # return tuple(reversed_transposition)
 
 
 def permute_back(grad_out: Arr, out: Arr, x: Arr, axes: tuple) -> Arr:
@@ -942,10 +952,10 @@ BACK_FUNCS.add_back_func(
     np.subtract, 1, lambda grad_out, out, x, y: -unbroadcast(grad_out, y)
 )
 BACK_FUNCS.add_back_func(
-    np.multiply, 0, lambda grad_out, out, x, y: unbroadcast(x * grad_out, x)
+    np.multiply, 0, lambda grad_out, out, x, y: unbroadcast(y * grad_out, x)
 )
 BACK_FUNCS.add_back_func(
-    np.multiply, 1, lambda grad_out, out, x, y: unbroadcast(y * grad_out, y)
+    np.multiply, 1, lambda grad_out, out, x, y: unbroadcast(x * grad_out, y)
 )
 BACK_FUNCS.add_back_func(
     np.true_divide, 0, lambda grad_out, out, x, y: unbroadcast(grad_out / y, x)
@@ -981,6 +991,7 @@ def safe_example():
     a.add_(b)
     c = a * b
     c.sum().backward()
+    # print(a.grad, b.grad)
     assert a.grad is not None and np.allclose(a.grad.array, [2.0, 3.0, 4.0, 5.0])
     assert b.grad is not None and np.allclose(b.grad.array, [2.0, 4.0, 6.0, 8.0])
 
@@ -1029,7 +1040,6 @@ def maximum_back1(grad_out: Arr, out: Arr, x: Arr, y: Arr):
     return unbroadcast(grad_out * bool_sum, y)
 
 
-print(maximum_back0(1, 0, np.array([0, 1]), np.array([-1, 2])))
 maximum = wrap_forward_fn(np.maximum)
 
 BACK_FUNCS.add_back_func(np.maximum, 0, maximum_back0)
@@ -1084,7 +1094,6 @@ class Parameter(Tensor):
 
 x = Tensor([1.0, 2.0, 3.0])
 p = Parameter(x)
-print(repr(p))
 assert p.requires_grad
 assert p.array is x.array
 assert (
@@ -1194,11 +1203,10 @@ assert list(mod.parameters()) == [
     mod.inner.param2,
 ], "parameters should come before submodule parameters"
 print("Manually verify that the repr looks reasonable:")
-print(mod)
 # %%
 
 
-class Linear(Module):
+class LinearMine(Module):
     weight: Parameter
     bias: Parameter | None
 
@@ -1237,6 +1245,59 @@ class Linear(Module):
 
         if self.bias is not None:
             out += self.bias
+        return out
+
+    def extra_repr(self) -> str:
+        # note, we need to use `self.bias is not None`, because `self.bias` is either a tensor or None, not bool
+        return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
+
+
+class Linear(Module):
+    weight: Parameter
+    bias: Parameter | None
+
+    def __init__(self, in_features: int, out_features: int, bias=True):
+        """
+        A simple linear (technically, affine) transformation.
+
+        The fields should be named `weight` and `bias` for compatibility with PyTorch.
+        If `bias` is False, set `self.bias` to None.
+        """
+        super().__init__()
+        # SOLUTION
+        self.in_features = in_features
+        self.out_features = out_features
+
+        # sf needs to be a float
+        sf = (2.0 / in_features) ** (0.5)  # in_features ** -0.5
+
+        # weight = sf * Tensor(2 * np.random.rand(out_features, in_features) - 1)
+        weight = sf * Tensor(np.random.randn(out_features, in_features))
+
+        self.weight = Parameter(weight)
+
+        if bias:
+            bias = sf * Tensor(
+                2
+                * np.random.rand(
+                    out_features,
+                )
+                - 1
+            )
+            self.bias = Parameter(bias)
+        else:
+            self.bias = None
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        x: shape (*, in_features)
+        Return: shape (*, out_features)
+        """
+        # SOLUTION
+        out = x @ self.weight.T
+        # Note, transpose has been defined as .permute(-1, -2) in the Tensor class
+        if self.bias is not None:
+            out = out + self.bias
         return out
 
     def extra_repr(self) -> str:
@@ -1286,7 +1347,6 @@ class MLP(Module):
 # %%
 X = Tensor(np.random.randint(0, 10, (3, 4)))
 Y = [0, 1, 2]
-print(X)
 X[arange(0, 3), Y]
 # %%
 # Cross-entropy
@@ -1300,19 +1360,23 @@ def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
 
     Return: shape (batch, ) containing the per-example loss.
     """
-    print(logits, true_labels)
 
-    num = exp(logits[arange(0, logits.shape[0]), true_labels])
-    print(num)
-    num = num
-    den = exp(logits).sum(1)
-    return -log(num / den)
+    # num = exp(logits[arange(0, logits.shape[0]), true_labels])
+    # num = num
+    # den = sum(exp(logits), dim=1)
+    # return -log(num / den)
+    n_batch, n_class = logits.shape
+    true = logits[arange(0, n_batch), true_labels]
+
+    # print("logits: ", exp(logits).sum(1))
+    v = -log(exp(true) / (exp(logits).sum(1) + 0.00000001))
+    # print("got v", v)
+    return v
 
 
 tests.test_cross_entropy(Tensor, cross_entropy)
 
 
-# %%
 class NoGrad:
     """Context manager that disables grad inside the block. Like torch.no_grad."""
 
@@ -1339,8 +1403,8 @@ class NoGrad:
 
 
 # %%
-train_loader, test_loader = get_mnist()
-visualize(train_loader)
+# train_loader, test_loader = get_mnist()
+# visualize(train_loader)
 
 
 # %%
@@ -1358,8 +1422,11 @@ class SGD:
     def step(self) -> None:
         with NoGrad():
             for i, p in enumerate(self.params):
+                # print("comp", p.shape, p.grad.shape)
                 assert isinstance(p.grad, Tensor)
+                # print(p)
                 p.add_(p.grad, -self.lr)
+                # print(p)
 
 
 def train(
@@ -1376,8 +1443,13 @@ def train(
         target = Tensor(target.numpy())
         optimizer.zero_grad()
         output = model(data)
+        # print(data.shape, output.shape)
         loss = cross_entropy(output, target).sum() / len(output)
+        # print(loss.shape)
+        # print("computing back")
         loss.backward()
+        # print("done")
+
         progress_bar.set_description(f"Train set: Avg loss: {loss.item():.3f}")
         optimizer.step()
         if train_loss_list is not None:
@@ -1403,16 +1475,15 @@ def test(model: MLP, test_loader: DataLoader, test_loss_list: list | None = None
         test_loss_list.append(test_loss)
 
 
-# %%
-
-num_epochs = 5
+num_epochs = 10
 model = MLP()
 start = time.time()
 train_loss_list = []
 test_loss_list = []
-optimizer = SGD(model.parameters(), 0.01)
+optimizer = SGD(model.parameters(), 0.001)
 for epoch in range(num_epochs):
     train(model, train_loader, optimizer, epoch, train_loss_list)
+    print(model.linear1.weight.sum(), model.linear2.weight.sum())
     test(model, test_loader, test_loss_list)
     optimizer.step()
 print(f"\nCompleted in {time.time() - start: .2f}s")
