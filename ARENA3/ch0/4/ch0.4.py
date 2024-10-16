@@ -969,13 +969,13 @@ tests.test_truedivide_broadcasted(Tensor)
 
 
 def add_(x: Tensor, other: Tensor, alpha: float = 1.0) -> Tensor:
-    '''Like torch.add_. Compute x += other * alpha in-place and return tensor.'''
+    """Like torch.add_. Compute x += other * alpha in-place and return tensor."""
     np.add(x.array, other.array * alpha, out=x.array)
     return x
 
 
 def safe_example():
-    '''This example should work properly.'''
+    """This example should work properly."""
     a = Tensor([0.0, 1.0, 2.0, 3.0], requires_grad=True)
     b = Tensor([2.0, 3.0, 4.0, 5.0], requires_grad=True)
     a.add_(b)
@@ -986,7 +986,7 @@ def safe_example():
 
 
 def unsafe_example():
-    '''This example is expected to compute the wrong gradients.'''
+    """This example is expected to compute the wrong gradients."""
     a = Tensor([0.0, 1.0, 2.0, 3.0], requires_grad=True)
     b = Tensor([2.0, 3.0, 4.0, 5.0], requires_grad=True)
     c = a * b
@@ -1000,7 +1000,6 @@ def unsafe_example():
         print("Grad wrt b is OK!")
     else:
         print("Grad wrt b is WRONG!")
-
 
 
 safe_example()
@@ -1052,7 +1051,7 @@ tests.test_relu(Tensor)
 
 # %%
 def _matmul2d(x: Arr, y: Arr) -> Arr:
-    '''Matrix multiply restricted to the case where both inputs are exactly 2D.'''
+    """Matrix multiply restricted to the case where both inputs are exactly 2D."""
     return x @ y
 
 
@@ -1060,9 +1059,11 @@ def matmul2d_back0(grad_out: Arr, out: Arr, x: Arr, y: Arr) -> Arr:
     # SOLUTION
     return grad_out @ y.T
 
+
 def matmul2d_back1(grad_out: Arr, out: Arr, x: Arr, y: Arr) -> Arr:
     # SOLUTION
     return x.T @ grad_out
+
 
 matmul = wrap_forward_fn(_matmul2d)
 BACK_FUNCS.add_back_func(_matmul2d, 0, matmul2d_back0)
@@ -1070,10 +1071,11 @@ BACK_FUNCS.add_back_func(_matmul2d, 1, matmul2d_back1)
 
 tests.test_matmul2d(Tensor)
 
+
 # %%
 class Parameter(Tensor):
     def __init__(self, tensor: Tensor, requires_grad=True):
-        '''Share the array with the provided tensor.'''
+        """Share the array with the provided tensor."""
         return super().__init__(tensor.array, requires_grad=requires_grad)
 
     def __repr__(self):
@@ -1085,12 +1087,16 @@ p = Parameter(x)
 print(repr(p))
 assert p.requires_grad
 assert p.array is x.array
-assert repr(p) == "Parameter containing:\nTensor(array([1., 2., 3.], dtype=float32), requires_grad=True)"
+assert (
+    repr(p)
+    == "Parameter containing:\nTensor(array([1., 2., 3.], dtype=float32), requires_grad=True)"
+)
 x.add_(Tensor(np.array(2.0)))
 assert np.allclose(
     p.array, np.array([3.0, 4.0, 5.0])
 ), "in-place modifications to the original tensor should affect the parameter"
 # %%
+
 
 class Module:
     _modules: dict[str, "Module"]
@@ -1101,15 +1107,15 @@ class Module:
         self._parameters = {}
 
     def modules(self):
-        '''Return the direct child modules of this module.'''
+        """Return the direct child modules of this module."""
         return self.__dict__["_modules"].values()
 
     def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
-        '''
+        """
         Return an iterator over Module parameters.
 
         recurse: if True, the iterator includes parameters of submodules, recursively.
-        '''
+        """
         yield from self._parameters.values()
 
         if recurse:
@@ -1117,10 +1123,10 @@ class Module:
                 yield from module.parameters(recurse=recurse)
 
     def __setattr__(self, key: str, val: Any) -> None:
-        '''
+        """
         If val is a Parameter or Module, store it in the appropriate _parameters or _modules dict.
         Otherwise, call __setattr__ from the superclass.
-        '''
+        """
         if isinstance(val, Module):
             self._modules[key] = val
         elif isinstance(val, Parameter):
@@ -1129,12 +1135,12 @@ class Module:
             super().__setattr__(key, val)
 
     def __getattr__(self, key: str) -> "Parameter | Module":
-        '''
+        """
         If key is in _parameters or _modules, return the corresponding value.
         Otherwise, raise KeyError.
-        '''
+        """
         # if not key in self._modules.keys() or key in self._parameters.keys() or s
-       #      raise KeyError("not in params nor in modules!")
+        #      raise KeyError("not in params nor in modules!")
 
         if key in self._modules.keys():
             return self._modules[key]
@@ -1142,7 +1148,6 @@ class Module:
             return self._parameters[key]
 
         return self.__dict__[key]
-        
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -1153,17 +1158,26 @@ class Module:
     def __repr__(self):
         def _indent(s_, numSpaces):
             return re.sub("\n", "\n" + (" " * numSpaces), s_)
-        lines = [f"({key}): {_indent(repr(module), 2)}" for key, module in self._modules.items()]
-        return "".join([
-            self.__class__.__name__ + "(",
-            "\n  " + "\n  ".join(lines) + "\n" if lines else "", ")"
-        ])
+
+        lines = [
+            f"({key}): {_indent(repr(module), 2)}"
+            for key, module in self._modules.items()
+        ]
+        return "".join(
+            [
+                self.__class__.__name__ + "(",
+                "\n  " + "\n  ".join(lines) + "\n" if lines else "",
+                ")",
+            ]
+        )
+
 
 class TestInnerModule(Module):
     def __init__(self):
         super().__init__()
         self.param1 = Parameter(Tensor([1.0]))
         self.param2 = Parameter(Tensor([2.0]))
+
 
 class TestModule(Module):
     def __init__(self):
@@ -1183,35 +1197,41 @@ print("Manually verify that the repr looks reasonable:")
 print(mod)
 # %%
 
+
 class Linear(Module):
     weight: Parameter
     bias: Parameter | None
 
     def __init__(self, in_features: int, out_features: int, bias=True):
-        '''
+        """
         A simple linear (technically, affine) transformation.
 
         The fields should be named `weight` and `bias` for compatibility with PyTorch.
         If `bias` is False, set `self.bias` to None.
-        '''
+        """
         super().__init__()
         kai_he_fact = 1 / (in_features**1 / 2)
 
         self.weight = Parameter(
-            Tensor(np.random.rand(out_features, in_features) * kai_he_fact * 2 - kai_he_fact)
+            Tensor(
+                np.random.rand(out_features, in_features) * kai_he_fact * 2
+                - kai_he_fact
+            )
         )
 
         self.bias = (
-            Parameter(Tensor(np.random.rand(out_features) * kai_he_fact * 2 - kai_he_fact))
+            Parameter(
+                Tensor(np.random.rand(out_features) * kai_he_fact * 2 - kai_he_fact)
+            )
             if bias
             else None
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        '''
+        """
         x: shape (*, in_features)
         Return: shape (*, out_features)
-        '''
+        """
         if len(x.shape) > 1:
             out = matmul(x, self.weight.T)  # , x, "i j, b j -> b i")
 
@@ -1222,7 +1242,6 @@ class Linear(Module):
     def extra_repr(self) -> str:
         # note, we need to use `self.bias is not None`, because `self.bias` is either a tensor or None, not bool
         return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
-
 
 
 linear = Linear(3, 4)
@@ -1239,9 +1258,12 @@ np.testing.assert_allclose(output.array, expected_output.array)
 print("All tests for `Linear` passed!")
 # %%
 
+
 class ReLU(Module):
     def forward(self, x: Tensor) -> Tensor:
         return relu(x)
+
+
 # %%
 class MLP(Module):
     def __init__(self):
@@ -1258,6 +1280,8 @@ class MLP(Module):
         x = self.relu2(self.linear2(x))
         x = self.output(x)
         return x
+
+
 # %%
 # %%
 X = Tensor(np.random.randint(0, 10, (3, 4)))
@@ -1267,17 +1291,18 @@ X[arange(0, 3), Y]
 # %%
 # Cross-entropy
 
+
 def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
-    '''Like torch.nn.functional.cross_entropy with reduction='none'.
+    """Like torch.nn.functional.cross_entropy with reduction='none'.
 
     logits: shape (batch, classes)
     true_labels: shape (batch,). Each element is the index of the correct label in the logits.
 
     Return: shape (batch, ) containing the per-example loss.
-    '''
+    """
     print(logits, true_labels)
-    
-    num = (exp(logits[arange(0, logits.shape[0]), true_labels]))
+
+    num = exp(logits[arange(0, logits.shape[0]), true_labels])
     print(num)
     num = num
     den = exp(logits).sum(1)
@@ -1286,17 +1311,18 @@ def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
 
 tests.test_cross_entropy(Tensor, cross_entropy)
 
+
 # %%
 class NoGrad:
-    '''Context manager that disables grad inside the block. Like torch.no_grad.'''
+    """Context manager that disables grad inside the block. Like torch.no_grad."""
 
     was_enabled: bool
 
     def __enter__(self):
-        '''
-        Method which is called whenever the context manager is entered, i.e. at the 
+        """
+        Method which is called whenever the context manager is entered, i.e. at the
         start of the `with NoGrad():` block.
-        '''
+        """
         global grad_tracking_enabled
 
         self.was_enabled = grad_tracking_enabled
@@ -1304,20 +1330,23 @@ class NoGrad:
         grad_tracking_enabled = False
 
     def __exit__(self, type, value, traceback):
-        '''
+        """
         Method which is called whenever we exit the context manager.
-        '''
+        """
         global grad_tracking_enabled
 
         grad_tracking_enabled = self.was_enabled
 
+
 # %%
 train_loader, test_loader = get_mnist()
 visualize(train_loader)
+
+
 # %%
 class SGD:
     def __init__(self, params: Iterable[Parameter], lr: float):
-        '''Vanilla SGD with no additional features.'''
+        """Vanilla SGD with no additional features."""
         self.params = list(params)
         self.lr = lr
         self.b = [None for _ in self.params]
@@ -1328,15 +1357,21 @@ class SGD:
 
     def step(self) -> None:
         with NoGrad():
-            for (i, p) in enumerate(self.params):
+            for i, p in enumerate(self.params):
                 assert isinstance(p.grad, Tensor)
                 p.add_(p.grad, -self.lr)
 
 
-def train(model: MLP, train_loader: DataLoader, optimizer: SGD, epoch: int, train_loss_list: list | None = None):
+def train(
+    model: MLP,
+    train_loader: DataLoader,
+    optimizer: SGD,
+    epoch: int,
+    train_loss_list: list | None = None,
+):
     print(f"Epoch: {epoch}")
     progress_bar = tqdm(enumerate(train_loader))
-    for (batch_idx, (data, target)) in progress_bar:
+    for batch_idx, (data, target) in progress_bar:
         data = Tensor(data.numpy())
         target = Tensor(target.numpy())
         optimizer.zero_grad()
@@ -1345,14 +1380,15 @@ def train(model: MLP, train_loader: DataLoader, optimizer: SGD, epoch: int, trai
         loss.backward()
         progress_bar.set_description(f"Train set: Avg loss: {loss.item():.3f}")
         optimizer.step()
-        if train_loss_list is not None: train_loss_list.append(loss.item())
+        if train_loss_list is not None:
+            train_loss_list.append(loss.item())
 
 
 def test(model: MLP, test_loader: DataLoader, test_loss_list: list | None = None):
     test_loss = 0
     correct = 0
     with NoGrad():
-        for (data, target) in test_loader:
+        for data, target in test_loader:
             data = Tensor(data.numpy())
             target = Tensor(target.numpy())
             output: Tensor = model(data)
@@ -1360,8 +1396,13 @@ def test(model: MLP, test_loader: DataLoader, test_loss_list: list | None = None
             pred = output.argmax(dim=1, keepdim=True)
             correct += (pred == target.reshape(pred.shape)).sum().item()
     test_loss /= len(test_loader.dataset)
-    print(f"Test set:  Avg loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} ({correct / len(test_loader.dataset):.1%})")
-    if test_loss_list is not None: test_loss_list.append(test_loss)
+    print(
+        f"Test set:  Avg loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} ({correct / len(test_loader.dataset):.1%})"
+    )
+    if test_loss_list is not None:
+        test_loss_list.append(test_loss)
+
+
 # %%
 
 num_epochs = 5
@@ -1383,6 +1424,6 @@ line(
     title="ConvNet training on MNIST",
     width=800,
     hovermode="x unified",
-    template="ggplot2", # alternative aesthetic for your plots (-:
+    template="ggplot2",  # alternative aesthetic for your plots (-:
 )
 # %%
