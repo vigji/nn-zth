@@ -95,15 +95,21 @@ def test_ConvTranspose2d(ConvTranspose2d, n_tests=5):
             "weight" in my_conv_module._parameters
         ), "You should name your weights 'weight' in your conv module."
         my_output = my_conv_module(x)
-        torch_output = t.conv_transpose2d(x, my_conv_module.weight, stride=stride, padding=padding)
+        torch_output = t.conv_transpose2d(
+            x, my_conv_module.weight, stride=stride, padding=padding
+        )
         t.testing.assert_close(my_output, torch_output, atol=1e-4, rtol=0)
 
     my_conv_module = ConvTranspose2d(20, 8, (3, 2), stride, padding)
     expected_sf = 1 / (8 * 3 * 2) ** 0.5
     error_msg = "Incorrect weight initialisation - check the PyTorch documentation."
     assert abs(my_conv_module.weight.mean().item()) < 0.01, error_msg
-    assert 0.9 * expected_sf < my_conv_module.weight.max().item() < expected_sf, error_msg
-    assert -0.9 * expected_sf > my_conv_module.weight.min().item() > -expected_sf, error_msg
+    assert (
+        0.9 * expected_sf < my_conv_module.weight.max().item() < expected_sf
+    ), error_msg
+    assert (
+        -0.9 * expected_sf > my_conv_module.weight.min().item() > -expected_sf
+    ), error_msg
     print("All tests in `test_ConvTranspose2d` passed!")
 
 
@@ -132,7 +138,9 @@ def test_Sigmoid(Sigmoid):
     print("All tests in `test_Sigmoid` passed.")
 
 
-def test_initialize_weights(initialize_weights, ConvTranspose2d, Conv2d, Linear, BatchNorm2d):
+def test_initialize_weights(
+    initialize_weights, ConvTranspose2d, Conv2d, Linear, BatchNorm2d
+):
     def test_model(
         model: t.nn.Module,
         expected_mean: float,

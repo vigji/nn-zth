@@ -44,7 +44,11 @@ section_dir = exercises_dir / "part5_gans_and_vaes"
 MAIN = __name__ == "__main__"
 
 device = t.device(
-    "mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu"
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 # Controls which models are trained when file runs with MAIN=True
@@ -254,7 +258,9 @@ def fractional_stride_2d(x, stride_h: int, stride_w: int):
     return x_new
 
 
-def conv_transpose2d(x, weights, stride: IntOrPair = 1, padding: IntOrPair = 0) -> t.Tensor:
+def conv_transpose2d(
+    x, weights, stride: IntOrPair = 1, padding: IntOrPair = 0
+) -> t.Tensor:
     """Like torch's conv_transpose2d using bias=False
     x: shape (batch, in_channels, height, width)
     weights: shape (out_channels, in_channels, kernel_height, kernel_width)
@@ -276,7 +282,9 @@ def conv_transpose2d(x, weights, stride: IntOrPair = 1, padding: IntOrPair = 0) 
     # Apply modification (which is controlled by the padding parameter)
     pad_h_actual = kernel_height - 1 - padding_h
     pad_w_actual = kernel_width - 1 - padding_w
-    assert min(pad_h_actual, pad_w_actual) >= 0, "total amount padded should be positive"
+    assert (
+        min(pad_h_actual, pad_w_actual) >= 0
+    ), "total amount padded should be positive"
     x_mod = pad2d(
         x_spaced_out,
         left=pad_w_actual,
@@ -317,7 +325,9 @@ class ConvTranspose2d(nn.Module):
         kernel_size = force_pair(kernel_size)
         sf = 1 / (self.out_channels * kernel_size[0] * kernel_size[1]) ** 0.5
 
-        self.weight = nn.Parameter(sf * (2 * t.rand(in_channels, out_channels, *kernel_size) - 1))
+        self.weight = nn.Parameter(
+            sf * (2 * t.rand(in_channels, out_channels, *kernel_size) - 1)
+        )
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         return conv_transpose2d(x, self.weight, self.stride, self.padding)
@@ -326,7 +336,13 @@ class ConvTranspose2d(nn.Module):
         return ", ".join(
             [
                 f"{key}={getattr(self, key)}"
-                for key in ["in_channels", "out_channels", "kernel_size", "stride", "padding"]
+                for key in [
+                    "in_channels",
+                    "out_channels",
+                    "kernel_size",
+                    "stride",
+                    "padding",
+                ]
             ]
         )
 
@@ -412,7 +428,9 @@ class AutoencoderTrainer:
             latent_dim_size=args.latent_dim_size,
             hidden_dim_size=args.hidden_dim_size,
         ).to(device)
-        self.optimizer = t.optim.Adam(self.model.parameters(), lr=args.lr, betas=args.betas)
+        self.optimizer = t.optim.Adam(
+            self.model.parameters(), lr=args.lr, betas=args.betas
+        )
 
     def training_step(self, img: t.Tensor) -> t.Tensor:
         """
@@ -433,10 +451,13 @@ class AutoencoderTrainer:
         output = self.model(HOLDOUT_DATA)
         if self.args.use_wandb:
             wandb.log(
-                {"images": [wandb.Image(arr) for arr in output.cpu().numpy()]}, step=self.step
+                {"images": [wandb.Image(arr) for arr in output.cpu().numpy()]},
+                step=self.step,
             )
         else:
-            display_data(t.concat([HOLDOUT_DATA, output]), nrows=2, title="AE reconstructions")
+            display_data(
+                t.concat([HOLDOUT_DATA, output]), nrows=2, title="AE reconstructions"
+            )
 
     def train(self) -> None:
         """
@@ -457,7 +478,9 @@ class AutoencoderTrainer:
 
                 # Update progress bar
                 self.step += img.shape[0]
-                progress_bar.set_description(f"{epoch=}, {loss=:.4f}, examples_seen={self.step}")
+                progress_bar.set_description(
+                    f"{epoch=}, {loss=:.4f}, examples_seen={self.step}"
+                )
 
             # Evaluate model on the same holdout data
             self.evaluate()
@@ -497,7 +520,9 @@ def visualise_output(
     # Normalize & truncate, then unflatten back into a grid shape
     output_truncated = np.clip((output * 0.3081) + 0.1307, 0, 1)
     output_single_image = einops.rearrange(
-        output_truncated, "(dim1 dim2) 1 height width -> (dim1 height) (dim2 width)", dim1=n_points
+        output_truncated,
+        "(dim1 dim2) 1 height width -> (dim1 height) (dim2 width)",
+        dim1=n_points,
     )
 
     # Display the results
@@ -533,11 +558,16 @@ def visualise_input(model, dataset: Dataset) -> None:
     labels = [str(label) for img, label in dataset]
 
     # Make a dataframe for scatter (px.scatter is more convenient to use when supplied with a dataframe)
-    df = pd.DataFrame({"dim1": latent_vectors[:, 0], "dim2": latent_vectors[:, 1], "label": labels})
+    df = pd.DataFrame(
+        {"dim1": latent_vectors[:, 0], "dim2": latent_vectors[:, 1], "label": labels}
+    )
     df = df.sort_values(by="label")
     fig = px.scatter(df, x="dim1", y="dim2", color="label")
     fig.update_layout(
-        height=700, width=700, title="Scatter plot of latent space dims", legend_title="Digit"
+        height=700,
+        width=700,
+        title="Scatter plot of latent space dims",
+        legend_title="Digit",
     )
     data_range = df["dim1"].max() - df["dim1"].min()
 
@@ -655,7 +685,9 @@ class VAETrainer:
             latent_dim_size=args.latent_dim_size,
             hidden_dim_size=args.hidden_dim_size,
         ).to(device)
-        self.optimizer = t.optim.Adam(self.model.parameters(), lr=args.lr, betas=args.betas)
+        self.optimizer = t.optim.Adam(
+            self.model.parameters(), lr=args.lr, betas=args.betas
+        )
 
     def training_step(self, img: t.Tensor, label: t.Tensor):
         """
@@ -693,10 +725,13 @@ class VAETrainer:
         output = self.model(HOLDOUT_DATA)[0]
         if self.args.use_wandb:
             wandb.log(
-                {"images": [wandb.Image(arr) for arr in output.cpu().numpy()]}, step=self.step
+                {"images": [wandb.Image(arr) for arr in output.cpu().numpy()]},
+                step=self.step,
             )
         else:
-            display_data(t.concat([HOLDOUT_DATA, output]), nrows=2, title="VAE reconstructions")
+            display_data(
+                t.concat([HOLDOUT_DATA, output]), nrows=2, title="VAE reconstructions"
+            )
 
     def train(self) -> None:
         """
@@ -712,7 +747,9 @@ class VAETrainer:
             for img, label in progress_bar:
                 loss = self.training_step(img, label)
 
-                progress_bar.set_description(f"{epoch=}, {loss=:.4f}, examples_seen={self.step}")
+                progress_bar.set_description(
+                    f"{epoch=}, {loss=:.4f}, examples_seen={self.step}"
+                )
 
             self.evaluate()
 
@@ -793,7 +830,9 @@ class Generator(nn.Module):
                 the generator)
         """
         n_layers = len(hidden_channels)
-        assert img_size % (2**n_layers) == 0, "activation size must double at each layer"
+        assert (
+            img_size % (2**n_layers) == 0
+        ), "activation size must double at each layer"
 
         super().__init__()
 
@@ -870,7 +909,9 @@ class Discriminator(nn.Module):
                 chronological order for the discriminator)
         """
         n_layers = len(hidden_channels)
-        assert img_size % (2**n_layers) == 0, "activation size must double at each layer"
+        assert (
+            img_size % (2**n_layers) == 0
+        ), "activation size must double at each layer"
 
         super().__init__()
 
@@ -953,7 +994,9 @@ def initialize_weights(model: nn.Module) -> None:
 
 
 if MAIN:
-    tests.test_initialize_weights(initialize_weights, ConvTranspose2d, Conv2d, Linear, BatchNorm2d)
+    tests.test_initialize_weights(
+        initialize_weights, ConvTranspose2d, Conv2d, Linear, BatchNorm2d
+    )
 
 
 # %%
@@ -1012,7 +1055,9 @@ class DCGANTrainer:
             self.trainset, batch_size=args.batch_size, shuffle=True, num_workers=8
         )
 
-        batch, img_channels, img_height, img_width = next(iter(self.trainloader))[0].shape
+        batch, img_channels, img_height, img_width = next(iter(self.trainloader))[
+            0
+        ].shape
         assert img_height == img_width
 
         self.model = (
@@ -1026,10 +1071,16 @@ class DCGANTrainer:
             .train()
         )
 
-        self.optG = t.optim.Adam(self.model.netG.parameters(), lr=args.lr, betas=args.betas)
-        self.optD = t.optim.Adam(self.model.netD.parameters(), lr=args.lr, betas=args.betas)
+        self.optG = t.optim.Adam(
+            self.model.netG.parameters(), lr=args.lr, betas=args.betas
+        )
+        self.optD = t.optim.Adam(
+            self.model.netD.parameters(), lr=args.lr, betas=args.betas
+        )
 
-    def training_step_discriminator(self, img_real: t.Tensor, img_fake: t.Tensor) -> t.Tensor:
+    def training_step_discriminator(
+        self, img_real: t.Tensor, img_fake: t.Tensor
+    ) -> t.Tensor:
         """
         Generates a real and fake image, and performs a gradient step on the discriminator
         to maximize log(D(x)) + log(1-D(G(z))).
@@ -1115,7 +1166,9 @@ class DCGANTrainer:
 
             for i, (img_real, label) in enumerate(progress_bar):
                 # Generate random noise & fake image
-                noise = t.randn(self.args.batch_size, self.args.latent_dim_size).to(device)
+                noise = t.randn(self.args.batch_size, self.args.latent_dim_size).to(
+                    device
+                )
                 img_real = img_real.to(device)
                 img_fake = self.model.netG(noise)
 
