@@ -1,5 +1,7 @@
 # %%
 from pathlib import Path
+from tqdm import tqdm
+from dataclasses import dataclass
 
 names_file = Path(__file__).parent / "names.txt"
 words = open(names_file).read().splitlines()
@@ -137,14 +139,110 @@ ys = t.tensor(ys)
 # for the neural network, we'll encode those index values as one-hot vectors
 import torch.nn.functional as F
 
-# By default one-hot is int. Cast to float to work with NNs
+# By default one-hot is int. Cast to float for future operations for NNs
 xenc = F.one_hot(xs, num_classes=possible_chars).float()
+yenc = F.one_hot(ys, num_classes=possible_chars).float()
 # %%
 plt.figure()
 plt.imshow(xenc)
 # %%
 # Now let's build our network!
-n_neurons = 27
-W = t.randn((27, n_neurons))  # one empty dim
+# minimal network, one single layer, n_neurons -> n_neurons 
+# (input mapped, output will directly correspond to our prediction)
+n_neurons_i = 27
+n_neurons_o = 27
+W = t.randn((n_neurons_i, n_neurons_o))  # one empty dim
 (xenc @ W).shape  # output batch_size, number of neurons
+
+(xenc @ W)[3, 13] == (xenc[3] * W[:, 13]).sum()  # same result
+# %%
+# We want the output of the matrix multiplication to be converted in a probability
+# distribution over the possible characters. Such distribution has to sum to 1.
+# our network is giving us log counts which we'll exponentiate element-wise:
+logits = xenc @ W  # log counts
+counts = logits.exp()  # equivalent to counts, bounded positive
+probs = counts / counts.sum(1, keepdim=True)
+probs.shape, yenc.shape # [0].sum()
+# loss = -(probs * yenc).sum()
+loss = -(probs[:, ys]).sum()
+loss
+# %%
+
+batch_size = 5
+# First, we create a training set:
+xs_all, ys_all = [], []
+for w in words:  # test this works for nonsense after regularization above
+    w = ["."] + list(w) + ["."]
+    for c1, c2 in zip(w, w[1:]):
+        ix1, ix2 = stoi[c1], stoi[c2]
+        xs_all.append(ix1)
+        ys_all.append(ix2)
+        print(c1, c2)
+
+xs_all = t.tensor(xs_all)  # uppercase Tensor defaults to float
+ys_all = t.tensor(ys_all) 
+# %%
+# My code before rest of the lecture:
+# n_epochs = 3
+train_fraction = 0.8
+# batch_size = 100
+
+@dataclass
+class TrainingParams:
+    epochs: int = 7
+    learning_rate: float = 0.0001
+    batch_size: int = 1280
+
+params = TrainingParams()
+
+dataset = t.utils.data.TensorDataset(xs_all, ys_all)
+train_size = int(train_fraction * len(xs_all))
+test_size = len(xs_all) - train_size
+train_dataset, test_dataset = t.utils.data.random_split(dataset, [train_size, test_size])
+
+
+train_loader = t.utils.data.DataLoader(train_dataset, batch_size=params.batch_size, shuffle=True)
+test_loader = t.utils.data.DataLoader(test_dataset, batch_size=params.batch_size, shuffle=True)
+
+linear_l = t.nn.Linear(in_features=n_neurons_i, out_features=n_neurons_o, bias=False)
+optimizer = t.optim.SGD(linear_l.parameters(), lr=params.learning_rate)
+
+for _ in range(params.epochs):
+    train_accuracy = 0
+    for xs, ys in (pbar := tqdm(train_loader)):
+        xenc = F.one_hot(xs, num_classes=possible_chars).float()
+        ys_logits = linear_l(xenc)
+        counts = ys_logits.exp()  # equivalent to counts, bounded positive
+        probs = counts / counts.sum(dim=1, keepdim=True)
+        
+        loss = -t.log((probs[:, ys]).sum() / len(xs))
+
+        loss.backward()
+
+        optimizer.step()
+
+        ys_predictions = probs.argmax(dim=1)
+        train_accuracy += (ys_predictions == ys).sum().item()
+        pbar.set_description(f"{loss:.4f}")
+
+    train_accuracy /= train_size
+
+    test_accuracy = 0
+    with t.no_grad():
+        # forward pass
+        accuracy = 0
+        for xs, ys in test_loader:
+            xenc = F.one_hot(xs, num_classes=possible_chars).float()
+            ys_logits = linear_l(xenc)
+            counts = ys_logits.exp()  # equivalent to counts, bounded positive
+            probs = counts / counts.sum(dim=1, keepdim=True)
+            
+            ys_predictions = probs.argmax(dim=1)
+            test_accuracy += (ys_predictions == ys).sum().item()
+    test_accuracy /= test_size
+    print(train_accuracy, test_accuracy)
+
+# %%
+plt.figure()
+plt.imshow(linear_l.weight.detach().numpy())
 # %%
