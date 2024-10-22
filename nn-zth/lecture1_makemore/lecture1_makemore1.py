@@ -189,8 +189,8 @@ train_fraction = 0.8
 
 @dataclass
 class TrainingParams:
-    epochs: int = 7
-    learning_rate: float = 0.0001
+    epochs: int = 20
+    learning_rate: float = 0.1
     batch_size: int = 1280
 
 params = TrainingParams()
@@ -211,14 +211,16 @@ for _ in range(params.epochs):
     train_accuracy = 0
     for xs, ys in (pbar := tqdm(train_loader)):
         xenc = F.one_hot(xs, num_classes=possible_chars).float()
+        
         ys_logits = linear_l(xenc)
+
+        # compute manually cross-entropy loss:
         counts = ys_logits.exp()  # equivalent to counts, bounded positive
         probs = counts / counts.sum(dim=1, keepdim=True)
+        loss = -t.log((probs[range(len(ys)), ys]).sum() / len(xs))
         
-        loss = -t.log((probs[:, ys]).sum() / len(xs))
-
+        optimizer.zero_grad()
         loss.backward()
-
         optimizer.step()
 
         ys_predictions = probs.argmax(dim=1)
@@ -245,4 +247,6 @@ for _ in range(params.epochs):
 # %%
 plt.figure()
 plt.imshow(linear_l.weight.detach().numpy())
+# %%
+-(probs[:, ys]).sum() / len(xs)
 # %%
