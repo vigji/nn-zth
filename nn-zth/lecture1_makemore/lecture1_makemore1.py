@@ -204,15 +204,19 @@ train_dataset, test_dataset = t.utils.data.random_split(dataset, [train_size, te
 train_loader = t.utils.data.DataLoader(train_dataset, batch_size=params.batch_size, shuffle=True)
 test_loader = t.utils.data.DataLoader(test_dataset, batch_size=params.batch_size, shuffle=True)
 
-linear_l = t.nn.Linear(in_features=n_neurons_i, out_features=n_neurons_o, bias=False)
-optimizer = t.optim.SGD(linear_l.parameters(), lr=params.learning_rate)
+n_hidden = 100
+# multiple layers version, otherwise t.nn.Linear(in_features=n_neurons_i, out_features=n_neurons_o, bias=False)
+linear_l1 = t.nn.Linear(in_features=n_neurons_i, out_features=n_hidden, bias=False)
+linear_l2 = t.nn.Linear(in_features=n_hidden, out_features=n_neurons_o, bias=False)
+relu = t.nn.ReLU()
+optimizer = t.optim.SGD(list(linear_l1.parameters()) + list(linear_l2.parameters()), lr=params.learning_rate)
 
 for _ in range(params.epochs):
     train_accuracy = 0
     for xs, ys in (pbar := tqdm(train_loader)):
         xenc = F.one_hot(xs, num_classes=possible_chars).float()
-        
-        ys_logits = linear_l(xenc)
+        # multiple layers version, otherwise ys_logits = linear_l1(xenc)
+        ys_logits = relu(linear_l2(relu(linear_l1(xenc))))
 
         # compute manually cross-entropy loss:
         counts = ys_logits.exp()  # equivalent to counts, bounded positive
@@ -249,4 +253,6 @@ plt.figure()
 plt.imshow(linear_l.weight.detach().numpy())
 # %%
 -(probs[:, ys]).sum() / len(xs)
+# %%
+network = t.nn.Module([linear_l1, linear_l2])
 # %%
