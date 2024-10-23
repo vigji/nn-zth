@@ -1,5 +1,6 @@
 # %%
 from pathlib import Path
+import re
 from tqdm import tqdm
 from dataclasses import dataclass
 
@@ -256,3 +257,52 @@ plt.imshow(linear_l.weight.detach().numpy())
 # %%
 network = t.nn.Module([linear_l1, linear_l2])
 # %%
+# First, we create a training set:
+xs, ys = [], []
+# xs are the inputs, ys the outputs we expect based on the dataset
+
+for w in words: #[:1]:  # test this works for nonsense after regularization above
+    w = ["."] + list(w) + ["."]
+    for c1, c2 in zip(w, w[1:]):
+        ix1, ix2 = stoi[c1], stoi[c2]
+        xs.append(ix1)
+        ys.append(ix2)
+        # print(c1, c2)
+
+xs = t.tensor(xs)  # uppercase Tensor defaults to float
+ys = t.tensor(ys)
+
+# simpler implementation in the lecture:
+n_neurons_i = 27
+n_neurons_o = 27
+W = t.randn((n_neurons_i, n_neurons_o), generator=g, requires_grad=True)  # one empty dim
+
+for _ in range(100):
+    xenc = F.one_hot(xs, num_classes=possible_chars).float()
+    # multiple layers version, otherwise ys_logits = linear_l1(xenc)
+    ys_logits = xenc @ W
+
+    # compute manually cross-entropy loss:
+    counts = ys_logits.exp()  # equivalent to counts, bounded positive
+    probs = counts / counts.sum(dim=1, keepdim=True)
+    # loss = -t.log((probs[t.arange(len(ys)), ys]).sum() / len(xs))
+    # adding an optional regularization
+    loss = -(probs[t.arange(len(ys)), ys]).log().mean() + 0.01*(W**2).mean()  
+    loss
+    # backward pass
+    W.grad = None  # zero the gradient
+    loss.backward()
+    W.data += -50 * W.grad
+    print(loss.item())
+
+# %%
+loss.backward()
+# we can aim at having a similar loss to when we were just using
+# probability of bigrams, but now we can complexify the neural net
+# %%
+f, axs = plt.subplots(1,2)
+axs[0].imshow(N, cmap="Blues")
+axs[1].imshow(W.exp().detach().numpy(), cmap="Blues")
+
+# %%
+# Generate some words
