@@ -192,10 +192,13 @@ for i, lr in enumerate(tqdm(lrs)):
 
 plt.figure()
 plt.hist(h.flatten().detach().numpy(), 50)
+
 # %%
+# Proper normalization for tanh: 5/(3 * sqrt(fan_in))
+
 g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
-W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * 0.1
+W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (5/(3*(n_inputs**0.5)))
 b1 = torch.randn(n_hidden, generator=g).to(device) * 0.01
 W2 = torch.randn(n_hidden, n_possible_chars, generator=g).to(device) * 0.01
 b2 = torch.randn(n_possible_chars, generator=g).to(device) * 0
@@ -246,5 +249,82 @@ plt.figure()
 plt.plot(train_result)
 plt.plot(val_result)
 
+# %%
+# BATCH NORMALIZATION
+# a trick that just made everything way simpler
+# why don't we just normalize what we feed into our nonlinearities?
 
+g = torch.Generator().manual_seed(2147483647)
+C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
+W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (5/(3*(n_inputs**0.5)))
+b1 = torch.randn(n_hidden, generator=g).to(device) * 0.01
+W2 = torch.randn(n_hidden, n_possible_chars, generator=g).to(device) * 0.01
+b2 = torch.randn(n_possible_chars, generator=g).to(device) * 0
+
+bn_gain = torch.ones((1, n_hidden))
+bn_bias = torch.zeros((1, n_hidden))
+bn_mn_running = torch.ones((1, n_hidden))
+bn_std_running = torch.ones((1, n_hidden))
+
+parameters = [C, W1, b1, W2, b2, bn_gain, bn_bias]
+for p in parameters:
+    p.requires_grad = True
+
+
+
+train_result = []
+val_result = []
+test_every = 100
+for i, lr in enumerate(tqdm(lrs)):
+    # select minibatch:
+    idx = torch.randint(0, Xtr.shape[0], (batch_size,)).to(device)
+
+    # Forward pass:
+    emb = C[Xtr[idx]]
+    preh = emb.view(-1, n_inputs) @ W1 + b1
+    mn = preh.mean(dim=0, keepdim=True)
+    sd = preh.std(dim=0, keepdim=True)
+
+    with torch.no_grad():
+        bn_mn_running = 0.999 * bn_mn_running + 0.001 * mn
+        bn_std_running = 0.999 * bn_std_running + 0.001 * sd
+
+
+    preh = bn_gain * (preh - mn) / sd + bn_bias
+    
+    h = torch.tanh(preh)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Ytr[idx])
+    train_result.append(loss.log10().item())
+    
+    # backward pass:
+    for p in parameters:
+        p.grad = None
+
+    loss.backward()
+    for p in parameters:
+        p.data += -lr * p.grad
+
+    # performance on val:
+    if i % test_every == 0:
+        with torch.no_grad():
+            # Forward pass:
+            emb = C[Xdev]
+            preh = emb.view(-1, n_inputs) @ W1 + b1
+            mn = preh.mean(dim=0, keepdim=True)
+            sd = preh.std(dim=0, keepdim=True)
+            preh = bn_gain * (preh - mn) / sd + bn_bias
+            
+            h = torch.tanh(preh)
+            logits = h @ W2 + b2
+            loss_val = F.cross_entropy(logits, Ydev)
+
+            val_result.extend([loss_val.log10().item(),]* test_every)
+
+    if i % 10000 == 0:
+        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+# %%
+plt.figure()
+plt.plot(train_result)
+plt.plot(val_result)
 # %%
