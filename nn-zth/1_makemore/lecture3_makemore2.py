@@ -339,7 +339,7 @@ plt.plot(val_result)
 # Let's pytorchify everything!
 
 class Linear:
-    def __init__(self, fan_in, fan_out, biases=False, init_gain=1):
+    def __init__(self, fan_in, fan_out, biases=True, init_gain=1):
         initialization_gain = init_gain / (fan_in ** 0.5)
         self.weight = torch.randn((fan_in, fan_out)) * initialization_gain
 
@@ -394,7 +394,8 @@ class Tanh:
         return []
 
     def __call__(self, X) -> torch.Any:
-        return F.tanh(X)
+        self.out = F.tanh(X)
+        return 
         
 # %%
 # let's now refactoring the network:
@@ -405,11 +406,50 @@ g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
 
 n_hidden_layers = 4
-layers = [Linear(n_dims_embedding, n_hidden, init_gain=5/3), Tanh(), ] + \
+layers = [Linear(n_dims_embedding * block_size, n_hidden, init_gain=5/3), Tanh(), ] + \
          [Linear(n_hidden, n_hidden, init_gain=5/3), Tanh(),] * n_hidden_layers + \
           [Linear(n_hidden, n_possible_chars, init_gain=0.1)]  # arbitrarily less confident
 
 parameters = [C,] + [p for layer in layers for p in layer.parameters()]
+print(sum([p.nelement() for p in parameters]))
 for param in parameters:
     param.requires_grad = True
+# %%
+
+batch_size = 32
+n_steps1 = 100000
+n_steps2 = 100000
+lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01])
+
+train_loss, val_loss = [], []
+for i, lr in enumerate(lrs):
+    ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)
+
+    Xb, Yb = Xtr[ix], Ytr[ix]
+
+    # forward pass:
+    x = C[Xb].view(-1, n_inputs)
+    for j, layer in enumerate(layers):
+        x = layer(x)
+
+    for param in parameters:
+        param.grad = None
+    loss = F.cross_entropy(x, Yb)
+    loss.backward()
+    train_loss.append(loss.log10().item())
+
+    for param in parameters:
+        param.data += -lr * param.grad
+
+    if i % 10000 == 0:
+        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+
+    break
+
+# %%
+x.shape
+# %%
+layers[0](x)
+# %%
+layers[0].weight.shape, x.shape
 # %%
