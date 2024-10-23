@@ -1,6 +1,7 @@
 # %%
 # Let's improve our generator in the direction of Bangio et al 2006
 
+from audioop import bias
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -253,25 +254,32 @@ plt.plot(val_result)
 # BATCH NORMALIZATION
 # a trick that just made everything way simpler
 # why don't we just normalize what we feed into our nonlinearities?
+# (in this case, we can remove biase of the layer)
+# Fior the evaluation, to be able to run network on single examples and not batches,
+# we will just use a rolling mean and std
 
 g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
 W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (5/(3*(n_inputs**0.5)))
-b1 = torch.randn(n_hidden, generator=g).to(device) * 0.01
 W2 = torch.randn(n_hidden, n_possible_chars, generator=g).to(device) * 0.01
 b2 = torch.randn(n_possible_chars, generator=g).to(device) * 0
 
 bn_gain = torch.ones((1, n_hidden))
 bn_bias = torch.zeros((1, n_hidden))
 bn_mn_running = torch.ones((1, n_hidden))
-bn_std_running = torch.ones((1, n_hidden))
+bn_sd_running = torch.ones((1, n_hidden))
 
-parameters = [C, W1, b1, W2, b2, bn_gain, bn_bias]
+parameters = [C, W1, W2, b2, bn_gain, bn_bias]
 for p in parameters:
     p.requires_grad = True
 
+n_steps1 = 200000
+n_steps2 = 200000
+n_steps3 = 0
+lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
 
-
+# We can use a large momentum if we use big batches
+momentum = 0.001
 train_result = []
 val_result = []
 test_every = 100
@@ -281,13 +289,13 @@ for i, lr in enumerate(tqdm(lrs)):
 
     # Forward pass:
     emb = C[Xtr[idx]]
-    preh = emb.view(-1, n_inputs) @ W1 + b1
+    preh = emb.view(-1, n_inputs) @ W1
     mn = preh.mean(dim=0, keepdim=True)
     sd = preh.std(dim=0, keepdim=True)
 
     with torch.no_grad():
-        bn_mn_running = 0.999 * bn_mn_running + 0.001 * mn
-        bn_std_running = 0.999 * bn_std_running + 0.001 * sd
+        bn_mn_running = (1-momentum) * bn_mn_running + momentum * mn
+        bn_sd_running = (1-momentum) * bn_sd_running + momentum * sd
 
 
     preh = bn_gain * (preh - mn) / sd + bn_bias
@@ -296,12 +304,13 @@ for i, lr in enumerate(tqdm(lrs)):
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Ytr[idx])
     train_result.append(loss.log10().item())
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
 
     loss.backward()
+
     for p in parameters:
         p.data += -lr * p.grad
 
@@ -311,9 +320,7 @@ for i, lr in enumerate(tqdm(lrs)):
             # Forward pass:
             emb = C[Xdev]
             preh = emb.view(-1, n_inputs) @ W1 + b1
-            mn = preh.mean(dim=0, keepdim=True)
-            sd = preh.std(dim=0, keepdim=True)
-            preh = bn_gain * (preh - mn) / sd + bn_bias
+            preh = bn_gain * (preh - bn_mn_running) / bn_sd_running + bn_bias
             
             h = torch.tanh(preh)
             logits = h @ W2 + b2
@@ -328,3 +335,31 @@ plt.figure()
 plt.plot(train_result)
 plt.plot(val_result)
 # %%
+
+# Let's pytorchify everything!
+
+class Linear:
+    def __init__(self, fan_in, fan_out, biases=False, init_gain=1):
+        initialization_gain = init_gain / (fan_in ** 0.5)
+        self.weight = torch.randn((fan_in, fan_out)) * initialization_gain
+
+        self.bias = torch.randn(fan_out) if biases else None
+
+    def __call__(self, X):
+        return X @ self.weight + self.bias
+    
+    def parameters(self):
+        params = [self.weight, ]
+        if self.bias is not None:
+            params += [self.bias, ]
+
+        return params
+
+
+class BatchNorm1:
+    def __init__(self) -> None:
+        pass
+        
+        
+    def __call__(self, *args: torch.Any, **kwds: torch.Any) -> torch.Any:
+        pass
