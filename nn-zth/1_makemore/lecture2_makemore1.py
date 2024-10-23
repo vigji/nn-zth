@@ -1,23 +1,4 @@
-# %%
-# Let's improve our generator in the direction of Bangio et al 2006
-
-import torch
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
-from pathlib import Path
-from tqdm import tqdm
-import einops as ein
-%matplotlib widget
-
-names_file = Path(__file__).parent / "names.txt"
-words = open(names_file).read().splitlines()
-
-n_possible_chars = 27
-# N = torch.zeros((possible_chars, possible_chars), dtype=torch.int32)
-chars = sorted(list(set("".join(words))))
-stoi = {s: i + 1 for i, s in enumerate(chars)}
-stoi["."] = 0
-itos = {s: i for i, s in stoi.items()}
+ 
 # %%
 print(itos)
 # %%
@@ -276,14 +257,15 @@ plt.scatter(C[:, 0].detach().numpy(), C[:, 1].detach().numpy())
 # Usually, 80%, 10%, 10%
 import random
 random.seed(42)
-dataset_size = len(words)
-idxs = list(range())
+dataset_size = len("".join(words))
+idxs = list(range(dataset_size))
 random.shuffle(idxs)
 
 dataset_size = X.shape[0]
 n_train = int(dataset_size * 0.8)
 n_val = int(dataset_size * 0.1)
 n_test = int(dataset_size * 0.1)
+print(n_train, n_val, n_test)
 
 # %%
 # all our params in one place:
@@ -297,9 +279,9 @@ batch_size = 256
 n_inputs = block_size * n_dims_embedding
 
 # learning schedule:
-n_steps1 = 100000
-n_steps2 = 50000
-n_steps3 = 5000
+n_steps1 = 200000
+n_steps2 = 100000
+n_steps3 = 50000
 lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
 
 X, Y = [], []
@@ -320,7 +302,10 @@ shuffledYs = Y[idxs]
 Xtr, Ytr = shuffledXs[:n_train].to(device), shuffledYs[:n_train].to(device)
 Xdev, Ydev = shuffledXs[n_train:n_train+n_val].to(device), shuffledYs[n_train:n_train+n_val].to(device)
 Xte, Yte = shuffledXs[n_train+n_val:].to(device), shuffledYs[n_train+n_val:].to(device)
+print(Xtr.shape, Xdev.shape, Xte.shape)
+# %%
 
+g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
 W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device)
 b1 = torch.randn(n_hidden, generator=g).to(device)
@@ -364,6 +349,8 @@ for i, lr in enumerate(tqdm(lrs)):
 
             val_result.extend([loss.item(),]* test_every)
 # %%
+Ytr.shape
+# %%
 smoothed_test = ein.reduce(torch.tensor(train_result), "(n 100) -> n", "mean")
 smoothed_val = ein.reduce(torch.tensor(val_result), "(n 100) -> n", "mean")
 
@@ -377,23 +364,33 @@ logits.shape, emb.shape, h.shape
 # %%
 
 # Generate syntetic names:
-n_to_produce = 5
+n_to_produce = 50
 
-start_from = torch.zeros(block_size, dtype=int)
 
-# for _ in range(n_to_produce):
-chars = []
-# while next_draw.item() != 0:
-X = start_from
-emb = C[X]
-h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
-logits = h @ W2 + b2
-next_draw = logits.argmax()
-chars.append(itos[next_draw.item()])
-    # print("".join(chars))
+for _ in range(n_to_produce):
+    start_from = torch.zeros(block_size, dtype=int)
+    chars = []
+    k = 0
+    next_draw = torch.ones(1)
+    while next_draw.item() != 0:
+        X = start_from
+        emb = C[X]
+        h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+        logits = h @ W2 + b2
+        counts = logits.exp()
+        prob = counts / torch.sum(counts, dim=1, keepdim=True)
+        next_draw = torch.multinomial(prob, 1, replacement=True)
+
+        # next_draw = logits.argmax()
+        chars.append(itos[next_draw.item()])
+        start_from = torch.cat([start_from[1:], torch.tensor([next_draw])])
+        k += 1
+        if k > 10:
+            break
+    print("".join(chars))
 
 # %%
-X
+start_from
 # %%
 next_draw
 # %%
