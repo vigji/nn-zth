@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from pathlib import Path
+from tqdm import tqdm
 import einops as ein
 %matplotlib widget
 
@@ -25,7 +26,7 @@ PAD_CH = "."
 
 X, Y = [], []
 
-for word in words[:5]:
+for word in words:
     # word = ["."] + list(word) + ["."]
     context = [PAD_CH] * block_size
     
@@ -108,7 +109,7 @@ for p in parameters:
     p.requires_grad = True
 
 lr = 0.1
-for _ in range(1000):
+for _ in range(100):
     # Forward pass:
     emb = C[X]
     h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
@@ -124,7 +125,275 @@ for _ in range(1000):
     for p in parameters:
         p.data += -lr * p.grad
 
-print(loss.item())
+    print(loss.item())
 
 # %%
-# How come we do not get to zero=
+# How come we do not get to zero?
+# Issue is we have initial characters of each word that cannot really be predicted from
+# the prev chars '...'
+
+# %%
+# Let's do stuff in batches now:
+lr = 0.1
+batch_size = 32
+
+g = torch.Generator().manual_seed(2147483647)
+n_hidden = 100
+
+C = torch.randn(n_possible_chars, n_dims_embedding, generator=g)
+W1 = torch.randn(n_inputs, n_hidden, generator=g)
+b1 = torch.randn(n_hidden, generator=g)
+W2 = torch.randn(n_hidden, n_possible_chars, generator=g)
+b2 = torch.randn(n_possible_chars, generator=g)
+
+parameters = [C, W1, b1, W2, b2]
+for p in parameters:
+    p.requires_grad = True
+
+for _ in range(100):
+    # select minibatch:
+    idx = torch.randint(0, X.shape[0], (batch_size,))
+
+    # Forward pass:
+    emb = C[X[idx]]
+    h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Y[idx])
+    
+    # backward pass:
+    for p in parameters:
+        p.grad = None
+
+    loss.backward()
+
+    for p in parameters:
+        p.data += -lr * p.grad
+
+print(loss.item())
+
+emb = C[X]
+h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+logits = h @ W2 + b2
+loss = F.cross_entropy(logits, Y)
+print("Total loss: ", loss.item())
+# %%
+# How can we decide the learning rate?
+lre = torch.linspace(-3, 0, 200)
+lrs = 10**lre
+
+g = torch.Generator().manual_seed(2147483647)
+n_hidden = 100
+
+
+results = []
+for lr in tqdm(lrs):
+    C = torch.randn(n_possible_chars, n_dims_embedding, generator=g)
+    W1 = torch.randn(n_inputs, n_hidden, generator=g)
+    b1 = torch.randn(n_hidden, generator=g)
+    W2 = torch.randn(n_hidden, n_possible_chars, generator=g)
+    b2 = torch.randn(n_possible_chars, generator=g)
+
+    parameters = [C, W1, b1, W2, b2]
+    for p in parameters:
+        p.requires_grad = True
+
+    result = []
+    for _ in range(100):
+        # select minibatch:
+        idx = torch.randint(0, X.shape[0], (batch_size,))
+
+        # Forward pass:
+        emb = C[X[idx]]
+        h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+        logits = h @ W2 + b2
+        loss = F.cross_entropy(logits, Y[idx])
+        
+        # backward pass:
+        for p in parameters:
+            p.grad = None
+
+        loss.backward()
+        result.append(loss.item())
+
+        for p in parameters:
+            p.data += -lr * p.grad
+
+    results.append(result)
+
+print(loss.item())
+# %%
+import numpy as np
+plt.figure()
+plt.plot(lre, np.array(results)[:, -1])
+plt.show()
+# %%
+# Optimum around 0.1. We can do the following: some iterations (10k?) at 0.1, and then "cool down" at 0.01
+n_steps1 = 30000
+n_steps2 = 20000
+n_steps3 = 20000
+lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
+
+
+C = torch.randn(n_possible_chars, n_dims_embedding, generator=g)
+W1 = torch.randn(n_inputs, n_hidden, generator=g)
+b1 = torch.randn(n_hidden, generator=g)
+W2 = torch.randn(n_hidden, n_possible_chars, generator=g)
+b2 = torch.randn(n_possible_chars, generator=g)
+
+parameters = [C, W1, b1, W2, b2]
+for p in parameters:
+    p.requires_grad = True
+
+result = []
+for lr in tqdm(lrs):
+    # select minibatch:
+    idx = torch.randint(0, X.shape[0], (batch_size,))
+
+    # Forward pass:
+    emb = C[X[idx]]
+    h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Y[idx])
+    
+    # backward pass:
+    for p in parameters:
+        p.grad = None
+
+    loss.backward()
+    result.append(loss.item())
+
+    for p in parameters:
+        p.data += -lr * p.grad
+
+# %%
+smoothed = ein.reduce(torch.tensor(result), "(n 100) -> n", "mean")
+plt.figure()
+plt.plot(smoothed)
+plt.figure()
+plt.scatter(C[:, 0].detach().numpy(), C[:, 1].detach().numpy())
+# %%
+# to do things properly, we should split test, dev/validation (hyperparameters optimization), and test split
+# Usually, 80%, 10%, 10%
+import random
+random.seed(42)
+dataset_size = len(words)
+idxs = list(range())
+random.shuffle(idxs)
+
+dataset_size = X.shape[0]
+n_train = int(dataset_size * 0.8)
+n_val = int(dataset_size * 0.1)
+n_test = int(dataset_size * 0.1)
+
+# %%
+# all our params in one place:
+device = "cpu"
+
+block_size = 5
+n_hidden = 2000
+n_dims_embedding = 10
+batch_size = 256
+
+n_inputs = block_size * n_dims_embedding
+
+# learning schedule:
+n_steps1 = 100000
+n_steps2 = 50000
+n_steps3 = 5000
+lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
+
+X, Y = [], []
+for word in words:
+    context = [PAD_CH] * block_size
+    for ch in word + PAD_CH:
+        iy = stoi[ch]
+        Y.append(iy)
+        X.append([stoi[cch] for cch in context])
+
+        context = context[1:] + [ch]
+
+X = torch.tensor(X)
+Y = torch.tensor(Y)
+shuffledXs = X[idxs, :]
+shuffledYs = Y[idxs]
+
+Xtr, Ytr = shuffledXs[:n_train].to(device), shuffledYs[:n_train].to(device)
+Xdev, Ydev = shuffledXs[n_train:n_train+n_val].to(device), shuffledYs[n_train:n_train+n_val].to(device)
+Xte, Yte = shuffledXs[n_train+n_val:].to(device), shuffledYs[n_train+n_val:].to(device)
+
+C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
+W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device)
+b1 = torch.randn(n_hidden, generator=g).to(device)
+W2 = torch.randn(n_hidden, n_possible_chars, generator=g).to(device)
+b2 = torch.randn(n_possible_chars, generator=g).to(device)
+
+parameters = [C, W1, b1, W2, b2]
+for p in parameters:
+    p.requires_grad = True
+
+train_result = []
+val_result = []
+test_every = 100
+for i, lr in enumerate(tqdm(lrs)):
+    # select minibatch:
+    idx = torch.randint(0, Xtr.shape[0], (batch_size,)).to(device)
+
+    # Forward pass:
+    emb = C[Xtr[idx]]
+    h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Ytr[idx])
+    train_result.append(loss)
+    
+    # backward pass:
+    for p in parameters:
+        p.grad = None
+
+    loss.backward()
+    for p in parameters:
+        p.data += -lr * p.grad
+
+    # performance on val:
+    if i % test_every == 0:
+        with torch.no_grad():
+            # Forward pass:
+            emb = C[Xdev]
+            h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+            logits = h @ W2 + b2
+            loss = F.cross_entropy(logits, Ydev)
+
+            val_result.extend([loss.item(),]* test_every)
+# %%
+smoothed_test = ein.reduce(torch.tensor(train_result), "(n 100) -> n", "mean")
+smoothed_val = ein.reduce(torch.tensor(val_result), "(n 100) -> n", "mean")
+
+plt.figure()
+plt.plot(smoothed_test)
+plt.plot(smoothed_val)
+plt.title(smoothed_val[-1])
+# if we are not overfitting our model is pretty small
+# %%
+logits.shape, emb.shape, h.shape
+# %%
+
+# Generate syntetic names:
+n_to_produce = 5
+
+start_from = torch.zeros(block_size, dtype=int)
+
+# for _ in range(n_to_produce):
+chars = []
+# while next_draw.item() != 0:
+X = start_from
+emb = C[X]
+h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+logits = h @ W2 + b2
+next_draw = logits.argmax()
+chars.append(itos[next_draw.item()])
+    # print("".join(chars))
+
+# %%
+X
+# %%
+next_draw
+# %%
