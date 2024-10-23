@@ -357,9 +357,59 @@ class Linear:
 
 
 class BatchNorm1:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, dim, eps=1e-5, momentum=0.1) -> None:
+        self.eps = eps
+        self.momentum = momentum
+        self.training = True
         
+        self.gamma = torch.ones((1, dim))
+        self.beta = torch.zeros((1, dim))
+
+        self.running_mean = torch.zeros((1, dim))
+        self.running_std = torch.zeros((1, dim))
+
+    def parameters(self):
+        return [self.running_mean, self.running_std]
+    
+    def __call__(self, X: torch.Any) -> torch.Any:
+        if self.training:
+            mean = X.mean(dim=0, keepdim=True)
+            std = X.std(dim=0, keepdim=True)
+
+            # context to avoid torch to keep track of those not needing backprop:
+            with torch.no_grad():
+                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
+                self.running_std = (1 - self.momentum) * self.running_std + self.momentum * std
+        else:
+            mean = self.running_mean
+            std = self.running_std
+
+        # just for tracking purposes:
+        self.out = self.gamma * (X - mean) / std + self.beta
+        return self.out
+    
+
+class Tanh:
+    def parameters(self) -> None:
+        return []
+
+    def __call__(self, X) -> torch.Any:
+        return F.tanh(X)
         
-    def __call__(self, *args: torch.Any, **kwds: torch.Any) -> torch.Any:
-        pass
+# %%
+# let's now refactoring the network:
+n_embd = 10
+n_hidden = 100
+
+g = torch.Generator().manual_seed(2147483647)
+C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
+
+n_hidden_layers = 4
+layers = [Linear(n_dims_embedding, n_hidden, init_gain=5/3), Tanh(), ] + \
+         [Linear(n_hidden, n_hidden, init_gain=5/3), Tanh(),] * n_hidden_layers + \
+          [Linear(n_hidden, n_possible_chars, init_gain=0.1)]  # arbitrarily less confident
+
+parameters = [C,] + [p for layer in layers for p in layer.parameters()]
+for param in parameters:
+    param.requires_grad = True
+# %%
