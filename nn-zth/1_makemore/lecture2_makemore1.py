@@ -11,7 +11,7 @@ import einops as ein
 names_file = Path(__file__).parent / "names.txt"
 words = open(names_file).read().splitlines()
 
-possible_chars = 27
+n_possible_chars = 27
 # N = torch.zeros((possible_chars, possible_chars), dtype=torch.int32)
 chars = sorted(list(set("".join(words))))
 stoi = {s: i + 1 for i, s in enumerate(chars)}
@@ -42,7 +42,7 @@ Y = torch.tensor(Y)
 # %%
 # Build our embedding space
 n_dims_embedding = 2
-C = torch.randn(possible_chars, n_dims_embedding)
+C = torch.randn(n_possible_chars, n_dims_embedding)
 C[5]  # indexing works as matrix multiplication of one-hot vector for element @ C
 # We can even index with multi-d index array!
 C[X].shape  # (n_blocks, context_length) -> (n_blocks, context_length, n_dims_embedding)
@@ -64,8 +64,67 @@ torch.cat(torch.unbind(emb, 1), 1) @ W1
 # or alternatively
 ein.rearrange(emb, "b ct dim -> b (ct dim)")  @ W1
 # or alternatively, this is actually the most efficient:
-emb.view(-1, n_inputs) @ W1
 
 
+# So, hidden activations will be:
+h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+h
+# %%
+# The next layer will be fully connected to all possible 27 chars:
+W2 = torch.randn(n_hidden, n_possible_chars)
+b2 = torch.randn(n_possible_chars)
+
+# not neurons but directly output, no non-linearity here:
+logits = h @ W2 + b2
+logits
+# %%
+# Softmax computation:
+counts = logits.exp()
+prob = counts / torch.sum(counts, dim=1, keepdim=True)
+
+prob[torch.arange(32), Y]  # extracts probabilities for all Ys with current state of mapping
+
+loss = -prob[torch.arange(32), Y].mean().log()
+loss
+
+# All this is equivalent to:
+loss = F.cross_entropy(logits, Y)
+# cross_entropy is not only more efficient than our manual implementation, but it is also
+# numerical better behaved: it uses internal normalizations to avoid nan/inf when computing
+# exponentiations with very small/large exponent
+# %%
+# Let's refactor everything now:
+g = torch.Generator().manual_seed(2147483647)
+n_hidden = 100
+
+C = torch.randn(n_possible_chars, n_dims_embedding, generator=g)
+W1 = torch.randn(n_inputs, n_hidden, generator=g)
+b1 = torch.randn(n_hidden, generator=g)
+W2 = torch.randn(n_hidden, n_possible_chars, generator=g)
+b2 = torch.randn(n_possible_chars, generator=g)
+
+parameters = [C, W1, b1, W2, b2]
+for p in parameters:
+    p.requires_grad = True
+
+lr = 0.1
+for _ in range(1000):
+    # Forward pass:
+    emb = C[X]
+    h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
+    logits = h @ W2 + b2
+    loss = F.cross_entropy(logits, Y)
+    
+    # backward pass:
+    for p in parameters:
+        p.grad = None
+
+    loss.backward()
+
+    for p in parameters:
+        p.data += -lr * p.grad
+
+print(loss.item())
 
 # %%
+# How come we do not get to zero=
