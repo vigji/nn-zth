@@ -10,11 +10,12 @@ from pathlib import Path
 from tqdm import tqdm
 import einops as ein
 import numpy as np
-%matplotlib widget
+
+# %matplotlib widget
 
 names_file = Path(__file__).parent / "names.txt"
 words = open(names_file).read().splitlines()
-PAD_CH = '.'
+PAD_CH = "."
 device = "cpu"
 
 
@@ -28,6 +29,7 @@ itos = {s: i for i, s in stoi.items()}
 block_size = 3
 
 import random
+
 random.seed(42)
 random.shuffle(words)
 
@@ -50,8 +52,10 @@ n_val = int(dataset_size * 0.1)
 n_test = int(dataset_size * 0.1)
 
 Xtr, Ytr = X[:n_train].to(device), Y[:n_train].to(device)
-Xdev, Ydev = X[n_train:n_train+n_val].to(device), Y[n_train:n_train+n_val].to(device)
-Xte, Yte = X[n_train+n_val:].to(device), Y[n_train+n_val:].to(device)
+Xdev, Ydev = X[n_train : n_train + n_val].to(device), Y[n_train : n_train + n_val].to(
+    device
+)
+Xte, Yte = X[n_train + n_val :].to(device), Y[n_train + n_val :].to(device)
 # %%
 n_hidden = 200
 n_dims_embedding = 10
@@ -60,7 +64,13 @@ batch_size = 32
 n_steps1 = 100000
 n_steps2 = 100000
 n_steps3 = 0
-lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
+lrs = torch.cat(
+    [
+        torch.ones(n_steps1) * 0.1,
+        torch.ones(n_steps2) * 0.01,
+        torch.ones(n_steps3) * 0.001,
+    ]
+)
 
 n_inputs = block_size * n_dims_embedding
 
@@ -76,7 +86,6 @@ for p in parameters:
     p.requires_grad = True
 
 
-
 train_result = []
 val_result = []
 test_every = 100
@@ -90,7 +99,7 @@ for i, lr in enumerate(tqdm(lrs)):
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Ytr[idx])
     train_result.append(loss.log10().item())
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -108,17 +117,24 @@ for i, lr in enumerate(tqdm(lrs)):
             logits = h @ W2 + b2
             loss_val = F.cross_entropy(logits, Ydev)
 
-            val_result.extend([loss_val.log10().item(),]* test_every)
+            val_result.extend(
+                [
+                    loss_val.log10().item(),
+                ]
+                * test_every
+            )
 
     if i % 10000 == 0:
-        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+        print(
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+        )
 # %%
 plt.figure()
 plt.plot([t.item() for t in train_result])
 # %%
 # What is the initial loss that we expect?
 # without knowledge, chars should have hom prob of 1/27 each
-p = 1/27
+p = 1 / 27
 
 # This is the loss that we would like to see, and it is actually much lower than ours
 -torch.tensor(p).log()
@@ -128,7 +144,7 @@ p = 1/27
 
 # %%
 # 4d example:
-logits = torch.tensor([0., 1., 5., 0.])
+logits = torch.tensor([0.0, 1.0, 5.0, 0.0])
 probs = torch.softmax((logits), dim=0)
 loss = -probs[2].log()
 probs, loss
@@ -150,7 +166,6 @@ for p in parameters:
     p.requires_grad = True
 
 
-
 train_result = []
 val_result = []
 test_every = 100
@@ -164,7 +179,7 @@ for i, lr in enumerate(tqdm(lrs)):
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Ytr[idx])
     train_result.append(loss.log10().item())
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -182,10 +197,17 @@ for i, lr in enumerate(tqdm(lrs)):
             logits = h @ W2 + b2
             loss_val = F.cross_entropy(logits, Ydev)
 
-            val_result.extend([loss_val.log10().item(),]* test_every)
+            val_result.extend(
+                [
+                    loss_val.log10().item(),
+                ]
+                * test_every
+            )
 
     if i % 10000 == 0:
-        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+        print(
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+        )
 # %%
 # This removed a bit of the easy descent at the beginning.
 
@@ -201,7 +223,9 @@ plt.hist(h.flatten().detach().numpy(), 50)
 
 g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
-W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (5/(3*(n_inputs**0.5)))
+W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (
+    5 / (3 * (n_inputs**0.5))
+)
 b1 = torch.randn(n_hidden, generator=g).to(device) * 0.01
 W2 = torch.randn(n_hidden, n_possible_chars, generator=g).to(device) * 0.01
 b2 = torch.randn(n_possible_chars, generator=g).to(device) * 0
@@ -209,7 +233,6 @@ b2 = torch.randn(n_possible_chars, generator=g).to(device) * 0
 parameters = [C, W1, b1, W2, b2]
 for p in parameters:
     p.requires_grad = True
-
 
 
 train_result = []
@@ -225,7 +248,7 @@ for i, lr in enumerate(tqdm(lrs)):
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Ytr[idx])
     train_result.append(loss.log10().item())
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -243,10 +266,17 @@ for i, lr in enumerate(tqdm(lrs)):
             logits = h @ W2 + b2
             loss_val = F.cross_entropy(logits, Ydev)
 
-            val_result.extend([loss_val.log10().item(),]* test_every)
+            val_result.extend(
+                [
+                    loss_val.log10().item(),
+                ]
+                * test_every
+            )
 
     if i % 10000 == 0:
-        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+        print(
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+        )
 # %%
 plt.figure()
 plt.plot(train_result)
@@ -262,7 +292,9 @@ plt.plot(val_result)
 
 g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
-W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (5/(3*(n_inputs**0.5)))
+W1 = torch.randn(n_inputs, n_hidden, generator=g).to(device) * (
+    5 / (3 * (n_inputs**0.5))
+)
 W2 = torch.randn(n_hidden, n_possible_chars, generator=g).to(device) * 0.01
 b2 = torch.randn(n_possible_chars, generator=g).to(device) * 0
 
@@ -278,7 +310,13 @@ for p in parameters:
 n_steps1 = 200000
 n_steps2 = 200000
 n_steps3 = 0
-lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
+lrs = torch.cat(
+    [
+        torch.ones(n_steps1) * 0.1,
+        torch.ones(n_steps2) * 0.01,
+        torch.ones(n_steps3) * 0.001,
+    ]
+)
 
 # We can use a large momentum if we use big batches
 momentum = 0.001
@@ -296,12 +334,11 @@ for i, lr in enumerate(tqdm(lrs)):
     sd = preh.std(dim=0, keepdim=True)
 
     with torch.no_grad():
-        bn_mn_running = (1-momentum) * bn_mn_running + momentum * mn
-        bn_sd_running = (1-momentum) * bn_sd_running + momentum * sd
-
+        bn_mn_running = (1 - momentum) * bn_mn_running + momentum * mn
+        bn_sd_running = (1 - momentum) * bn_sd_running + momentum * sd
 
     preh = bn_gain * (preh - mn) / sd + bn_bias
-    
+
     h = torch.tanh(preh)
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Ytr[idx])
@@ -323,15 +360,22 @@ for i, lr in enumerate(tqdm(lrs)):
             emb = C[Xdev]
             preh = emb.view(-1, n_inputs) @ W1 + b1
             preh = bn_gain * (preh - bn_mn_running) / bn_sd_running + bn_bias
-            
+
             h = torch.tanh(preh)
             logits = h @ W2 + b2
             loss_val = F.cross_entropy(logits, Ydev)
 
-            val_result.extend([loss_val.log10().item(),]* test_every)
+            val_result.extend(
+                [
+                    loss_val.log10().item(),
+                ]
+                * test_every
+            )
 
     if i % 10000 == 0:
-        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+        print(
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+        )
 # %%
 plt.figure()
 plt.plot(train_result)
@@ -340,22 +384,28 @@ plt.plot(val_result)
 
 # Let's pytorchify everything!
 
+
 class Linear:
     def __init__(self, fan_in, fan_out, biases=True, init_gain=1, generator=None):
-        initialization_gain = init_gain / (fan_in ** 0.5)
-        self.weight = torch.randn((fan_in, fan_out), generator=generator) #* initialization_gain  #/ (fan_in ** 0.5)
-        
+        initialization_gain = init_gain / (fan_in**0.5)
+        self.weight = torch.randn(
+            (fan_in, fan_out), generator=generator
+        )  # * initialization_gain  #/ (fan_in ** 0.5)
 
         self.bias = torch.zeros(fan_out) if biases else None
 
     def __call__(self, X):
         self.out = X @ self.weight + self.bias
         return self.out
-    
+
     def parameters(self):
-        params = [self.weight, ]
+        params = [
+            self.weight,
+        ]
         if self.bias is not None:
-            params += [self.bias, ]
+            params += [
+                self.bias,
+            ]
 
         return params
 
@@ -365,7 +415,7 @@ class BatchNorm1:
         self.eps = eps
         self.momentum = momentum
         self.training = True
-        
+
         self.gamma = torch.ones((1, dim)) * gamma_coef
         self.beta = torch.zeros((1, dim))
 
@@ -374,7 +424,7 @@ class BatchNorm1:
 
     def parameters(self):
         return [self.gamma, self.beta]
-    
+
     def __call__(self, X: torch.Any) -> torch.Any:
         if self.training:
             mean = X.mean(dim=0, keepdim=True)
@@ -382,8 +432,12 @@ class BatchNorm1:
 
             # context to avoid torch to keep track of those not needing backprop:
             with torch.no_grad():
-                self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
-                self.running_std = (1 - self.momentum) * self.running_std + self.momentum * std
+                self.running_mean = (
+                    1 - self.momentum
+                ) * self.running_mean + self.momentum * mean
+                self.running_std = (
+                    1 - self.momentum
+                ) * self.running_std + self.momentum * std
         else:
             mean = self.running_mean
             std = self.running_std
@@ -391,7 +445,7 @@ class BatchNorm1:
         # just for tracking purposes:
         self.out = self.gamma * (X - mean) / std + self.beta
         return self.out
-    
+
 
 class Tanh:
     def parameters(self) -> None:
@@ -400,7 +454,8 @@ class Tanh:
     def __call__(self, X) -> torch.Any:
         self.out = F.tanh(X)
         return self.out
-        
+
+
 # %%
 # let's now refactoring the network:
 n_embd = 10
@@ -411,15 +466,28 @@ C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
 
 n_hidden_layers = 4
 tanh_gain = 5 / 3
-layers = [Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain), BatchNorm1(n_hidden), Tanh(), ]
+layers = [
+    Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain),
+    BatchNorm1(n_hidden),
+    Tanh(),
+]
 
 for _ in range(n_hidden_layers):
-    new_layer = [Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain), BatchNorm1(n_hidden), Tanh(),]
+    new_layer = [
+        Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain),
+        BatchNorm1(n_hidden),
+        Tanh(),
+    ]
     layers += new_layer
 
-layers += [Linear(n_hidden, n_possible_chars, generator=g), BatchNorm1(n_possible_chars, gamma_coef=0.1),]  # arbitrarily less confident
+layers += [
+    Linear(n_hidden, n_possible_chars, generator=g),
+    BatchNorm1(n_possible_chars, gamma_coef=0.1),
+]  # arbitrarily less confident
 
-parameters = [C,] + [p for layer in layers for p in layer.parameters()]
+parameters = [
+    C,
+] + [p for layer in layers for p in layer.parameters()]
 print(sum([p.data.sum() for p in parameters]))
 for param in parameters:
     param.requires_grad = True
@@ -429,7 +497,7 @@ for param in parameters:
 batch_size = 32
 n_steps1 = 100000
 n_steps2 = 100000
-lrs = torch.cat([torch.ones(n_steps1) *1, torch.ones(n_steps2) *0.01])
+lrs = torch.cat([torch.ones(n_steps1) * 1, torch.ones(n_steps2) * 0.01])
 
 ud = []
 
@@ -443,7 +511,7 @@ for i, lr in enumerate(lrs):
     x = C[Xb].view(-1, n_inputs)
     for j, layer in enumerate(layers):
         x = layer(x)
-    
+
     loss = F.cross_entropy(x, Yb)
 
     for layer in layers:
@@ -458,23 +526,38 @@ for i, lr in enumerate(lrs):
         param.data += -lr * param.grad
 
     if i % 10000 == 0:
-        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
+        print(
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+        )
 
     with torch.no_grad():
-        ud.append([(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters])
+        ud.append(
+            [(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters]
+        )
 
     if i > 1000:
         break
 
 # %%
-xbins = np.linspace(-1., 1., 50)
+xbins = np.linspace(-1.0, 1.0, 50)
 plt.figure()
 for l in layers:
     if isinstance(l, Tanh):
         # print(l.out.flatten())
         t = l.out
-        print('layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.abs() > 0.97).float().mean()*100))
-        counts, bins = torch.histogram(l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        print(
+            "layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%"
+            % (
+                i,
+                layer.__class__.__name__,
+                t.mean(),
+                t.std(),
+                (t.abs() > 0.97).float().mean() * 100,
+            )
+        )
+        counts, bins = torch.histogram(
+            l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True
+        )
         plt.plot(bins[1:].detach(), counts.detach())
 plt.show()
 # %%
@@ -485,8 +568,19 @@ for l in layers:
         # print(l.out.flatten())
         t = l.out.grad
         p = l.out.data
-        print('layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.abs() > 0.97).float().mean()*100))
-        counts, bins = torch.histogram(t.flatten(), density=True) # torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        print(
+            "layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%"
+            % (
+                i,
+                layer.__class__.__name__,
+                t.mean(),
+                t.std(),
+                (t.abs() > 0.97).float().mean() * 100,
+            )
+        )
+        counts, bins = torch.histogram(
+            t.flatten(), density=True
+        )  # torch.tensor(xbins, dtype=l.out.dtype), density=True)
         plt.plot(bins[1:].detach(), counts.detach())
 plt.show()
 # %%
@@ -494,8 +588,13 @@ plt.figure()
 for i, p in enumerate(parameters):
     if p.ndim == 2:
         t = p.grad
-        print('layer %d (%10s): mean %+.4f, std %.4f, ratio: %.5f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.std() / p.std())))
-        counts, bins = torch.histogram(t.flatten(), density=True) #, torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        print(
+            "layer %d (%10s): mean %+.4f, std %.4f, ratio: %.5f%%"
+            % (i, layer.__class__.__name__, t.mean(), t.std(), (t.std() / p.std()))
+        )
+        counts, bins = torch.histogram(
+            t.flatten(), density=True
+        )  # , torch.tensor(xbins, dtype=l.out.dtype), density=True)
         plt.plot(bins[1:].detach(), counts.detach())
 plt.show()
 # %%

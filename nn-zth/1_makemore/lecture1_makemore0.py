@@ -148,7 +148,7 @@ plt.figure()
 plt.imshow(xenc)
 # %%
 # Now let's build our network!
-# minimal network, one single layer, n_neurons -> n_neurons 
+# minimal network, one single layer, n_neurons -> n_neurons
 # (input mapped, output will directly correspond to our prediction)
 n_neurons_i = 27
 n_neurons_o = 27
@@ -163,7 +163,7 @@ W = t.randn((n_neurons_i, n_neurons_o))  # one empty dim
 logits = xenc @ W  # log counts
 counts = logits.exp()  # equivalent to counts, bounded positive
 probs = counts / counts.sum(1, keepdim=True)
-probs.shape, yenc.shape # [0].sum()
+probs.shape, yenc.shape  # [0].sum()
 # loss = -(probs * yenc).sum()
 loss = -(probs[:, ys]).sum()
 loss
@@ -181,12 +181,13 @@ for w in words:  # test this works for nonsense after regularization above
         print(c1, c2)
 
 xs_all = t.tensor(xs_all)  # uppercase Tensor defaults to float
-ys_all = t.tensor(ys_all) 
+ys_all = t.tensor(ys_all)
 # %%
 # My code before rest of the lecture:
 # n_epochs = 3
 train_fraction = 0.8
 # batch_size = 100
+
 
 @dataclass
 class TrainingParams:
@@ -194,23 +195,32 @@ class TrainingParams:
     learning_rate: float = 0.1
     batch_size: int = 1280
 
+
 params = TrainingParams()
 
 dataset = t.utils.data.TensorDataset(xs_all, ys_all)
 train_size = int(train_fraction * len(xs_all))
 test_size = len(xs_all) - train_size
-train_dataset, test_dataset = t.utils.data.random_split(dataset, [train_size, test_size])
+train_dataset, test_dataset = t.utils.data.random_split(
+    dataset, [train_size, test_size]
+)
 
 
-train_loader = t.utils.data.DataLoader(train_dataset, batch_size=params.batch_size, shuffle=True)
-test_loader = t.utils.data.DataLoader(test_dataset, batch_size=params.batch_size, shuffle=True)
+train_loader = t.utils.data.DataLoader(
+    train_dataset, batch_size=params.batch_size, shuffle=True
+)
+test_loader = t.utils.data.DataLoader(
+    test_dataset, batch_size=params.batch_size, shuffle=True
+)
 
 n_hidden = 100
 # multiple layers version, otherwise t.nn.Linear(in_features=n_neurons_i, out_features=n_neurons_o, bias=False)
 linear_l1 = t.nn.Linear(in_features=n_neurons_i, out_features=n_hidden, bias=False)
 linear_l2 = t.nn.Linear(in_features=n_hidden, out_features=n_neurons_o, bias=False)
 relu = t.nn.ReLU()
-optimizer = t.optim.SGD(list(linear_l1.parameters()) + list(linear_l2.parameters()), lr=params.learning_rate)
+optimizer = t.optim.SGD(
+    list(linear_l1.parameters()) + list(linear_l2.parameters()), lr=params.learning_rate
+)
 
 for _ in range(params.epochs):
     train_accuracy = 0
@@ -223,7 +233,7 @@ for _ in range(params.epochs):
         counts = ys_logits.exp()  # equivalent to counts, bounded positive
         probs = counts / counts.sum(dim=1, keepdim=True)
         loss = -t.log((probs[range(len(ys)), ys]).sum() / len(xs))
-        
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -243,7 +253,7 @@ for _ in range(params.epochs):
             ys_logits = linear_l(xenc)
             counts = ys_logits.exp()  # equivalent to counts, bounded positive
             probs = counts / counts.sum(dim=1, keepdim=True)
-            
+
             ys_predictions = probs.argmax(dim=1)
             test_accuracy += (ys_predictions == ys).sum().item()
     test_accuracy /= test_size
@@ -261,7 +271,7 @@ network = t.nn.Module([linear_l1, linear_l2])
 xs, ys = [], []
 # xs are the inputs, ys the outputs we expect based on the dataset
 
-for w in words: #[:1]:  # test this works for nonsense after regularization above
+for w in words:  # [:1]:  # test this works for nonsense after regularization above
     w = ["."] + list(w) + ["."]
     for c1, c2 in zip(w, w[1:]):
         ix1, ix2 = stoi[c1], stoi[c2]
@@ -275,7 +285,9 @@ ys = t.tensor(ys)
 # simpler implementation in the lecture:
 n_neurons_i = 27
 n_neurons_o = 27
-W = t.randn((n_neurons_i, n_neurons_o), generator=g, requires_grad=True)  # one empty dim
+W = t.randn(
+    (n_neurons_i, n_neurons_o), generator=g, requires_grad=True
+)  # one empty dim
 
 for _ in range(100):
     xenc = F.one_hot(xs, num_classes=possible_chars).float()
@@ -287,7 +299,7 @@ for _ in range(100):
     probs = counts / counts.sum(dim=1, keepdim=True)
     # loss = -t.log((probs[t.arange(len(ys)), ys]).sum() / len(xs))
     # adding an optional regularization
-    loss = -(probs[t.arange(len(ys)), ys]).log().mean() + 0.01*(W**2).mean()  
+    loss = -(probs[t.arange(len(ys)), ys]).log().mean() + 0.01 * (W**2).mean()
     loss
     # backward pass
     W.grad = None  # zero the gradient
@@ -300,7 +312,7 @@ loss.backward()
 # we can aim at having a similar loss to when we were just using
 # probability of bigrams, but now we can complexify the neural net
 # %%
-f, axs = plt.subplots(1,2)
+f, axs = plt.subplots(1, 2)
 axs[0].imshow(N, cmap="Blues")
 axs[1].imshow(W.exp().detach().numpy(), cmap="Blues")
 

@@ -42,12 +42,18 @@ from solutions_bonus_p2 import (
     force_pair,
 )
 
-device = t.device('mps' if t.backends.mps.is_available() else 'cuda' if t.cuda.is_available() else 'cpu')
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 section_dir = Path(__file__).parent
 celeb_data_dir = section_dir / "data/celeba"
 celeb_image_dir = celeb_data_dir / "img_align_celeba"
-+# %%
+# %%
 os.makedirs(celeb_image_dir, exist_ok=True)
 
 if len(list(celeb_image_dir.glob("*.jpg"))) > 0:
@@ -73,43 +79,50 @@ def get_dataset(dataset: Literal["MNIST", "CELEB"], train: bool = True) -> Datas
     if dataset == "CELEB":
         image_size = 64
         assert train, "CelebA dataset only has a training set"
-        transform = transforms.Compose([
-            transforms.Resize(image_size),
-            transforms.CenterCrop(image_size),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ])
+        transform = transforms.Compose(
+            [
+                transforms.Resize(image_size),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        )
         trainset = datasets.ImageFolder(
-            root = exercises_dir / "part5_gans_and_vaes/data/celeba",
-            transform = transform
+            root=exercises_dir / "part5_gans_and_vaes/data/celeba", transform=transform
         )
 
     elif dataset == "MNIST":
         img_size = 28
-        transform = transforms.Compose([
-            transforms.Resize(img_size),
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
-        ])
+        transform = transforms.Compose(
+            [
+                transforms.Resize(img_size),
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        )
         trainset = datasets.MNIST(
-            root = exercises_dir / "part5_gans_and_vaes/data",
-            transform = transform,
-            download = True,
+            root=exercises_dir / "part5_gans_and_vaes/data",
+            transform=transform,
+            download=True,
         )
 
     return trainset
 
+
 def display_data(x: t.Tensor, nrows: int, title: str):
-    '''Displays a batch of data, using plotly.'''
+    """Displays a batch of data, using plotly."""
     # Reshape into the right shape for plotting (make it 2D if image is monochrome)
     y = einops.rearrange(x, "(b1 b2) c h w -> (b1 h) (b2 w) c", b1=nrows).squeeze()
     # Normalize, in the 0-1 range
     y = (y - y.min()) / (y.max() - y.min())
     # Display data
     imshow(
-        y, binary_string=(y.ndim==2), height=50*(nrows+5),
-        title=title + f"<br>single input shape = {x[0].shape}"
+        y,
+        binary_string=(y.ndim == 2),
+        height=50 * (nrows + 5),
+        title=title + f"<br>single input shape = {x[0].shape}",
     )
+
 
 # Load in MNIST, get first batch from dataloader, and display
 trainset_mnist = get_dataset("MNIST")
@@ -119,4 +132,4 @@ display_data(x, nrows=8, title="MNIST data")
 # Load in CelebA, get first batch from dataloader, and display
 trainset_celeb = get_dataset("CELEB")
 x = next(iter(DataLoader(trainset_celeb, batch_size=64)))[0]
-display_data(x, nrows=8, title="CalebA data")+
+display_data(x, nrows=8, title="CelebA data")

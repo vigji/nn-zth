@@ -1,4 +1,3 @@
- 
 # %%
 print(itos)
 # %%
@@ -10,7 +9,7 @@ X, Y = [], []
 for word in words:
     # word = ["."] + list(word) + ["."]
     context = [PAD_CH] * block_size
-    
+
     for ch in word + PAD_CH:
         iy = stoi[ch]
         Y.append(iy)
@@ -30,21 +29,21 @@ C[5]  # indexing works as matrix multiplication of one-hot vector for element @ 
 C[X].shape  # (n_blocks, context_length) -> (n_blocks, context_length, n_dims_embedding)
 
 # So this will be embedding:
-emb = C[X] 
+emb = C[X]
 
 # Next step in the network is a fully connected layer of n_hidden neurons
 n_inputs = block_size * n_dims_embedding
 n_hidden = 100
 
 W1 = torch.randn(n_inputs, n_hidden)  # weights
-b1 = torch.randn(n_hidden) # biases
+b1 = torch.randn(n_hidden)  # biases
 
 # %%
 torch.cat([emb[:, i, :] for i in range(emb.shape[1])], dim=1) @ W1
 # or alternatively
 torch.cat(torch.unbind(emb, 1), 1) @ W1
 # or alternatively
-ein.rearrange(emb, "b ct dim -> b (ct dim)")  @ W1
+ein.rearrange(emb, "b ct dim -> b (ct dim)") @ W1
 # or alternatively, this is actually the most efficient:
 
 
@@ -64,7 +63,9 @@ logits
 counts = logits.exp()
 prob = counts / torch.sum(counts, dim=1, keepdim=True)
 
-prob[torch.arange(32), Y]  # extracts probabilities for all Ys with current state of mapping
+prob[
+    torch.arange(32), Y
+]  # extracts probabilities for all Ys with current state of mapping
 
 loss = -prob[torch.arange(32), Y].mean().log()
 loss
@@ -96,7 +97,7 @@ for _ in range(100):
     h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Y)
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -140,7 +141,7 @@ for _ in range(100):
     h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Y[idx])
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -188,7 +189,7 @@ for lr in tqdm(lrs):
         h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
         logits = h @ W2 + b2
         loss = F.cross_entropy(logits, Y[idx])
-        
+
         # backward pass:
         for p in parameters:
             p.grad = None
@@ -204,6 +205,7 @@ for lr in tqdm(lrs):
 print(loss.item())
 # %%
 import numpy as np
+
 plt.figure()
 plt.plot(lre, np.array(results)[:, -1])
 plt.show()
@@ -212,7 +214,13 @@ plt.show()
 n_steps1 = 30000
 n_steps2 = 20000
 n_steps3 = 20000
-lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
+lrs = torch.cat(
+    [
+        torch.ones(n_steps1) * 0.1,
+        torch.ones(n_steps2) * 0.01,
+        torch.ones(n_steps3) * 0.001,
+    ]
+)
 
 
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g)
@@ -235,7 +243,7 @@ for lr in tqdm(lrs):
     h = torch.tanh(emb.view(-1, n_inputs) @ W1 + b1)
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Y[idx])
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -256,6 +264,7 @@ plt.scatter(C[:, 0].detach().numpy(), C[:, 1].detach().numpy())
 # to do things properly, we should split test, dev/validation (hyperparameters optimization), and test split
 # Usually, 80%, 10%, 10%
 import random
+
 random.seed(42)
 dataset_size = len("".join(words))
 idxs = list(range(dataset_size))
@@ -282,7 +291,13 @@ n_inputs = block_size * n_dims_embedding
 n_steps1 = 200000
 n_steps2 = 100000
 n_steps3 = 50000
-lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01, torch.ones(n_steps3) *0.001])
+lrs = torch.cat(
+    [
+        torch.ones(n_steps1) * 0.1,
+        torch.ones(n_steps2) * 0.01,
+        torch.ones(n_steps3) * 0.001,
+    ]
+)
 
 X, Y = [], []
 for word in words:
@@ -300,8 +315,12 @@ shuffledXs = X[idxs, :]
 shuffledYs = Y[idxs]
 
 Xtr, Ytr = shuffledXs[:n_train].to(device), shuffledYs[:n_train].to(device)
-Xdev, Ydev = shuffledXs[n_train:n_train+n_val].to(device), shuffledYs[n_train:n_train+n_val].to(device)
-Xte, Yte = shuffledXs[n_train+n_val:].to(device), shuffledYs[n_train+n_val:].to(device)
+Xdev, Ydev = shuffledXs[n_train : n_train + n_val].to(device), shuffledYs[
+    n_train : n_train + n_val
+].to(device)
+Xte, Yte = shuffledXs[n_train + n_val :].to(device), shuffledYs[n_train + n_val :].to(
+    device
+)
 print(Xtr.shape, Xdev.shape, Xte.shape)
 # %%
 
@@ -329,7 +348,7 @@ for i, lr in enumerate(tqdm(lrs)):
     logits = h @ W2 + b2
     loss = F.cross_entropy(logits, Ytr[idx])
     train_result.append(loss)
-    
+
     # backward pass:
     for p in parameters:
         p.grad = None
@@ -347,7 +366,12 @@ for i, lr in enumerate(tqdm(lrs)):
             logits = h @ W2 + b2
             loss = F.cross_entropy(logits, Ydev)
 
-            val_result.extend([loss.item(),]* test_every)
+            val_result.extend(
+                [
+                    loss.item(),
+                ]
+                * test_every
+            )
 # %%
 Ytr.shape
 # %%
