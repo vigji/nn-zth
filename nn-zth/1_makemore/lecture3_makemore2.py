@@ -2,12 +2,14 @@
 # Let's improve our generator in the direction of Bangio et al 2006
 
 from audioop import bias
+from networkx import density
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
 import einops as ein
+import numpy as np
 %matplotlib widget
 
 names_file = Path(__file__).parent / "names.txt"
@@ -339,14 +341,16 @@ plt.plot(val_result)
 # Let's pytorchify everything!
 
 class Linear:
-    def __init__(self, fan_in, fan_out, biases=True, init_gain=1):
+    def __init__(self, fan_in, fan_out, biases=True, init_gain=1, generator=None):
         initialization_gain = init_gain / (fan_in ** 0.5)
-        self.weight = torch.randn((fan_in, fan_out)) * initialization_gain
+        self.weight = torch.randn((fan_in, fan_out), generator=generator) * initialization_gain  #/ (fan_in ** 0.5)
+        
 
-        self.bias = torch.randn(fan_out) if biases else None
+        self.bias = torch.zeros(fan_out) if biases else None
 
     def __call__(self, X):
-        return X @ self.weight + self.bias
+        self.out = X @ self.weight + self.bias
+        return self.out
     
     def parameters(self):
         params = [self.weight, ]
@@ -395,7 +399,7 @@ class Tanh:
 
     def __call__(self, X) -> torch.Any:
         self.out = F.tanh(X)
-        return 
+        return self.out
         
 # %%
 # let's now refactoring the network:
@@ -406,15 +410,21 @@ g = torch.Generator().manual_seed(2147483647)
 C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
 
 n_hidden_layers = 4
-layers = [Linear(n_dims_embedding * block_size, n_hidden, init_gain=5/3), Tanh(), ] + \
-         [Linear(n_hidden, n_hidden, init_gain=5/3), Tanh(),] * n_hidden_layers + \
-          [Linear(n_hidden, n_possible_chars, init_gain=0.1)]  # arbitrarily less confident
+tanh_gain = 5 / 3
+layers = [Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain), Tanh(), ]
+
+for _ in range(n_hidden_layers):
+    new_layer = [Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain), Tanh(),]
+    layers += new_layer
+
+layers += [Linear(n_hidden, n_possible_chars, generator=g, init_gain=0.1),]  # arbitrarily less confident
 
 parameters = [C,] + [p for layer in layers for p in layer.parameters()]
-print(sum([p.nelement() for p in parameters]))
+print(sum([p.data.sum() for p in parameters]))
 for param in parameters:
     param.requires_grad = True
 # %%
+
 
 batch_size = 32
 n_steps1 = 100000
@@ -431,10 +441,14 @@ for i, lr in enumerate(lrs):
     x = C[Xb].view(-1, n_inputs)
     for j, layer in enumerate(layers):
         x = layer(x)
+    
+    loss = F.cross_entropy(x, Yb)
+
+    for layer in layers:
+        layer.out.retain_grad()
 
     for param in parameters:
         param.grad = None
-    loss = F.cross_entropy(x, Yb)
     loss.backward()
     train_loss.append(loss.log10().item())
 
@@ -447,9 +461,33 @@ for i, lr in enumerate(lrs):
     break
 
 # %%
-x.shape
+xbins = np.linspace(-1., 1., 50)
+plt.figure()
+for l in layers:
+    if isinstance(l, Tanh):
+        # print(l.out.flatten())
+        t = l.out
+        print('layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.abs() > 0.97).float().mean()*100))
+        counts, _ = torch.histogram(l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        print()
+        plt.plot((xbins[1:] + xbins[:-1])/2, counts.detach())
+plt.show()
 # %%
-layers[0](x)
+xbins = np.linspace(-1., 1., 50)
+plt.figure()
+for l in layers:
+    if isinstance(l, Tanh):
+        # print(l.out.flatten())
+        t = l.out
+        print('layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.abs() > 0.97).float().mean()*100))
+        counts, _ = torch.histogram(l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        print()
+        plt.plot((xbins[1:] + xbins[:-1])/2, counts.detach())
+plt.show()
 # %%
 layers[0].weight.shape, x.shape
+# %%
+l.out.detach().numpy().shape
+# %%
+b
 # %%
