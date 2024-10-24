@@ -343,7 +343,7 @@ plt.plot(val_result)
 class Linear:
     def __init__(self, fan_in, fan_out, biases=True, init_gain=1, generator=None):
         initialization_gain = init_gain / (fan_in ** 0.5)
-        self.weight = torch.randn((fan_in, fan_out), generator=generator) * initialization_gain  #/ (fan_in ** 0.5)
+        self.weight = torch.randn((fan_in, fan_out), generator=generator) #* initialization_gain  #/ (fan_in ** 0.5)
         
 
         self.bias = torch.zeros(fan_out) if biases else None
@@ -361,19 +361,19 @@ class Linear:
 
 
 class BatchNorm1:
-    def __init__(self, dim, eps=1e-5, momentum=0.1) -> None:
+    def __init__(self, dim, eps=1e-5, momentum=0.1, gamma_coef=1) -> None:
         self.eps = eps
         self.momentum = momentum
         self.training = True
         
-        self.gamma = torch.ones((1, dim))
+        self.gamma = torch.ones((1, dim)) * gamma_coef
         self.beta = torch.zeros((1, dim))
 
         self.running_mean = torch.zeros((1, dim))
         self.running_std = torch.zeros((1, dim))
 
     def parameters(self):
-        return [self.running_mean, self.running_std]
+        return [self.gamma, self.beta]
     
     def __call__(self, X: torch.Any) -> torch.Any:
         if self.training:
@@ -411,13 +411,13 @@ C = torch.randn(n_possible_chars, n_dims_embedding, generator=g).to(device)
 
 n_hidden_layers = 4
 tanh_gain = 5 / 3
-layers = [Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain), Tanh(), ]
+layers = [Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain), BatchNorm1(n_hidden), Tanh(), ]
 
 for _ in range(n_hidden_layers):
-    new_layer = [Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain), Tanh(),]
+    new_layer = [Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain), BatchNorm1(n_hidden), Tanh(),]
     layers += new_layer
 
-layers += [Linear(n_hidden, n_possible_chars, generator=g, init_gain=0.1),]  # arbitrarily less confident
+layers += [Linear(n_hidden, n_possible_chars, generator=g), BatchNorm1(n_possible_chars, gamma_coef=0.1),]  # arbitrarily less confident
 
 parameters = [C,] + [p for layer in layers for p in layer.parameters()]
 print(sum([p.data.sum() for p in parameters]))
@@ -429,7 +429,9 @@ for param in parameters:
 batch_size = 32
 n_steps1 = 100000
 n_steps2 = 100000
-lrs = torch.cat([torch.ones(n_steps1) *0.1, torch.ones(n_steps2) *0.01])
+lrs = torch.cat([torch.ones(n_steps1) *1, torch.ones(n_steps2) *0.01])
+
+ud = []
 
 train_loss, val_loss = [], []
 for i, lr in enumerate(lrs):
@@ -458,7 +460,11 @@ for i, lr in enumerate(lrs):
     if i % 10000 == 0:
         print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, ")
 
-    break
+    with torch.no_grad():
+        ud.append([(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters])
+
+    if i > 1000:
+        break
 
 # %%
 xbins = np.linspace(-1., 1., 50)
@@ -468,26 +474,38 @@ for l in layers:
         # print(l.out.flatten())
         t = l.out
         print('layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.abs() > 0.97).float().mean()*100))
-        counts, _ = torch.histogram(l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True)
-        print()
-        plt.plot((xbins[1:] + xbins[:-1])/2, counts.detach())
+        counts, bins = torch.histogram(l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        plt.plot(bins[1:].detach(), counts.detach())
 plt.show()
 # %%
-xbins = np.linspace(-1., 1., 50)
+xbins = np.linspace(-0.001, 0.001, 50)
 plt.figure()
 for l in layers:
     if isinstance(l, Tanh):
         # print(l.out.flatten())
-        t = l.out
+        t = l.out.grad
+        p = l.out.data
         print('layer %d (%10s): mean %+.2f, std %.2f, saturated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.abs() > 0.97).float().mean()*100))
-        counts, _ = torch.histogram(l.out.flatten(), torch.tensor(xbins, dtype=l.out.dtype), density=True)
-        print()
-        plt.plot((xbins[1:] + xbins[:-1])/2, counts.detach())
+        counts, bins = torch.histogram(t.flatten(), density=True) # torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        plt.plot(bins[1:].detach(), counts.detach())
 plt.show()
 # %%
-layers[0].weight.shape, x.shape
+plt.figure()
+for i, p in enumerate(parameters):
+    if p.ndim == 2:
+        t = p.grad
+        print('layer %d (%10s): mean %+.4f, std %.4f, ratio: %.5f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), (t.std() / p.std())))
+        counts, bins = torch.histogram(t.flatten(), density=True) #, torch.tensor(xbins, dtype=l.out.dtype), density=True)
+        plt.plot(bins[1:].detach(), counts.detach())
+plt.show()
 # %%
-l.out.detach().numpy().shape
-# %%
-b
+
+legends = []
+plt.figure()
+for i, p in enumerate(parameters):
+    if p.ndim == 2:
+        plt.plot([ud[j][i] for j in range(len(ud))])
+        legends.append(f"param {i}")
+plt.plot([0, len(ud)], [-3, -3], "k")
+plt.legend(legends)
 # %%
