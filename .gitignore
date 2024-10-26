@@ -167,4 +167,6 @@ cython_debug/
 
 **/wandb/**
 
+**/data/**
+
 *.DS_Store

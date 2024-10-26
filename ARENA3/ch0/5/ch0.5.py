@@ -133,3 +133,16 @@ display_data(x, nrows=8, title="MNIST data")
 trainset_celeb = get_dataset("CELEB")
 x = next(iter(DataLoader(trainset_celeb, batch_size=64)))[0]
 display_data(x, nrows=8, title="CelebA data")
+
+# %%
+
+testset = get_dataset("MNIST", train=False)
+HOLDOUT_DATA_DICT = dict()
+for data, target in DataLoader(testset, batch_size=1):
+    if target.item() not in HOLDOUT_DATA_DICT:
+        HOLDOUT_DATA_DICT[target.item()] = data.squeeze()
+        if len(HOLDOUT_DATA_DICT) == 10: break
+HOLDOUT_DATA = t.stack([HOLDOUT_DATA_DICT[i] for i in range(10)]).to(dtype=t.float, device=device).unsqueeze(1)
+
+display_data(HOLDOUT_DATA, nrows=1, title="MNIST holdout data")
+# %%

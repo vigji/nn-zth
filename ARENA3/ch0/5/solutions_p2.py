@@ -24,7 +24,7 @@ if str(exercises_dir := Path(__file__).parent.parent) not in sys.path:
     sys.path.append(str(exercises_dir))
 
 import tests as tests
-from utils import print_param_count
+from utils_p2 import print_param_count
 from plotly_utils import line
 
 section_dir = exercises_dir / "part2_cnns"

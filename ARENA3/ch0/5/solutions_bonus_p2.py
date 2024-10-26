@@ -20,8 +20,8 @@ from tqdm.notebook import tqdm
 if str(exercises_dir := Path(__file__).parent.parent) not in sys.path:
     sys.path.append(str(exercises_dir))
 
-import part2_cnns.tests as tests
-from part2_cnns.solutions import IMAGENET_TRANSFORM, Linear, ResNet34, copy_weights
+import tests_p2 as tests
+from solutions_p2 import IMAGENET_TRANSFORM, Linear, ResNet34, copy_weights
 from plotly_utils import line
 
 device = t.device(
