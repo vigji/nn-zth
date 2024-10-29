@@ -40,6 +40,17 @@ for word in words:
 X = torch.tensor(X)
 Y = torch.tensor(Y)
 
+dataset_size = X.shape[0]
+n_train = int(dataset_size * 0.8)
+n_val = int(dataset_size * 0.1)
+n_test = int(dataset_size * 0.1)
+
+Xtr, Ytr = X[:n_train].to(device), Y[:n_train].to(device)
+Xdev, Ydev = X[n_train : n_train + n_val].to(device), Y[n_train : n_train + n_val].to(
+    device
+)
+Xte, Yte = X[n_train + n_val :].to(device), Y[n_train + n_val :].to(device)
+
 # %%
 
 class Linear:
@@ -47,7 +58,7 @@ class Linear:
         initialization_gain = init_gain / (fan_in**0.5)
         self.weight = torch.randn(
             (fan_in, fan_out), generator=generator
-        )  # * initialization_gain  #/ (fan_in ** 0.5)
+        )  * initialization_gain
 
         self.bias = torch.zeros(fan_out) if biases else None
 
@@ -116,4 +127,78 @@ class Tanh:
 # %%
 # let's now refactoring the network:
 n_embd = 10
-n_hidden = 100
+n_hidden = 200
+batch_size = 32
+n_dims_embedding = 10
+block_size = 3
+
+lrs = torch.cat([torch.ones(150000) * 1, torch.ones(50000) * 0.01])
+
+n_hidden_layers = 4
+tanh_gain = 5 / 3
+layers = [
+    Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain),
+    BatchNorm1(n_hidden),
+    Tanh(),
+]
+
+for _ in range(n_hidden_layers):
+    new_layer = [
+        Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain),
+        BatchNorm1(n_hidden),
+        Tanh(),
+    ]
+    layers += new_layer
+
+layers += [
+    Linear(n_hidden, n_possible_chars, generator=g),
+    BatchNorm1(n_possible_chars, gamma_coef=0.1),
+]  # arbitrarily less confident
+
+parameters = [
+    C,
+] + [p for layer in layers for p in layer.parameters()]
+print(sum([p.data.sum() for p in parameters]))
+for param in parameters:
+    param.requires_grad = True
+
+# %%
+ud = []
+
+train_loss, val_loss = [], []
+for i, lr in enumerate(lrs):
+    ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)
+
+    Xb, Yb = Xtr[ix], Ytr[ix]
+
+    # forward pass:
+    x = C[Xb].view(-1, n_inputs)
+    for j, layer in enumerate(layers):
+        x = layer(x)
+
+    loss = F.cross_entropy(x, Yb)
+
+    for layer in layers:
+        layer.out.retain_grad()
+
+    for param in parameters:
+        param.grad = None
+    loss.backward()
+    train_loss.append(loss.log10().item())
+
+    for param in parameters:
+        param.data += -lr * param.grad
+
+    if i % 10000 == 0:
+        print(
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+        )
+
+    with torch.no_grad():
+        ud.append(
+            [(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters]
+        )
+
+    # if i > 1000:
+    #     break
+# %%
