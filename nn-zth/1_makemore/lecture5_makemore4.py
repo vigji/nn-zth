@@ -132,38 +132,60 @@ class Tanh:
 class Embedding:
     def __init__(self, n_embeddings, n_possible_chars=27) -> None:
         self.weight = torch.randn(n_possible_chars, n_dims_embedding).to(device)
+        self.out = None
 
     def parameters(self) -> None:
         return [self.weight]
     
     def __call__(self, Xidx) -> torch.Any:
-        return self.weight[Xidx]
+        self.out = self.weight[Xidx]
+        return self.out
 
 
 class Flatten:
     def __call__(self, X) -> torch.Any:
         self.out = X.view(X.shape[0], -1)
         return self.out
+    
+    def parameters(self) -> None:
+        return []
+
+class Sequential:
+    def __init__(self, layers) -> None:
+        self.layers = layers
+
+    def __call__(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        self.out = x
+        return self.out
+    
+    def parameters(self):
+        return [p for layer in self.layers for p in layer.parameters()]
+
 
 
 # %%
 torch.manual_seed(42)
+
 # let's now refactoring the network:
 n_hidden = 200
 batch_size = 32
 n_dims_embedding = 10
 block_size = 3
 
-n_hidden_layers = 4
 tanh_gain = 5 / 3
-layers = [
-    Linear(n_dims_embedding * block_size, n_hidden, init_gain=tanh_gain, biases=False),
-    BatchNorm1(n_hidden), Tanh(), Linear(n_hidden, n_possible_chars),
-]
+layers = Sequential([Embedding(n_dims_embedding), 
+                     Flatten(),
+                     Linear(n_dims_embedding * block_size, n_hidden, 
+                            biases=False),  #init_gain=tanh_gain, 
+                     BatchNorm1(n_hidden), 
+                     Tanh(), 
+                     Linear(n_hidden, n_possible_chars),
+])
+layers.layers[-1].weight *= 0.1
 
-parameters = [
-    C,
-] + [p for layer in layers for p in layer.parameters()]
+parameters = layers.parameters()
 print(sum([p.nelement() for p in parameters]))
 for param in parameters:
     param.requires_grad = True
@@ -179,15 +201,9 @@ for i, lr in tqdm(list(enumerate(lrs))):
 
     Xb, Yb = Xtr[ix], Ytr[ix]
 
-    # forward pass:
-    x = C[Xb].view(batch_size, -1)
-    for j, layer in enumerate(layers):
-        x = layer(x)
+    logits = layers(Xb)
 
-    loss = F.cross_entropy(x, Yb)
-
-    for layer in layers:
-        layer.out.retain_grad()
+    loss = F.cross_entropy(logits, Yb)
 
     for param in parameters:
         param.grad = None
@@ -202,16 +218,49 @@ for i, lr in tqdm(list(enumerate(lrs))):
             f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss.item():.4f}, "
         )
 
-    # with torch.no_grad():
-    #     ud.append(
-    #         [(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters]
-    #     )
-
-    # if i > 1000:
-    #     break
 # %%
 plt.figure()
 plt.plot(torch.tensor(train_loss).view(-1, 1000).mean(dim=1))
 # %%
-x
+# Evaluate:
+for layer in layers.layers:
+    layer.training = False
+
+@torch.no_grad()
+def test_loss(split):
+    Xb, Yb = dict(dev=(Xdev, Ydev), test=(Xte, Yte),
+                  train=(Xtr, Ytr))[split]
+    logits = layers(Xb)
+    loss = F.cross_entropy(logits, Yb)
+
+    print(f"{split} -> loss: {loss.item():.4f}")
+
+test_loss("train")
+test_loss("test")
+
+# Generate syntetic names:
+n_to_produce = 50
+
+
+for _ in range(n_to_produce):
+    start_from = torch.zeros(block_size, dtype=int)
+    chars = []
+    k = 0
+    next_draw = torch.ones(1)
+    while next_draw.item() != 0:
+        X = start_from
+        logits = layers(X.unsqueeze(0))
+        counts = logits.exp()
+        prob = counts / torch.sum(counts, dim=1, keepdim=True)
+        next_draw = torch.multinomial(prob, 1, replacement=True)
+
+        # next_draw = logits.argmax()
+        chars.append(itos[next_draw.item()])
+        start_from = torch.cat([start_from[1:], torch.tensor([next_draw])])
+        k += 1
+        if k > 10:
+            break
+    print("".join(chars))
+
+
 # %%
