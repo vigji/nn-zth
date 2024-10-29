@@ -1,6 +1,4 @@
 # %%
-from audioop import bias
-from matplotlib import cm
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -131,7 +129,7 @@ class Tanh:
 
 class Embedding:
     def __init__(self, n_embeddings, n_possible_chars=27) -> None:
-        self.weight = torch.randn(n_possible_chars, n_dims_embedding).to(device)
+        self.weight = torch.randn(n_possible_chars, n_embeddings).to(device)
         self.out = None
 
     def parameters(self) -> None:
@@ -174,16 +172,17 @@ batch_size = 32
 n_dims_embedding = 10
 block_size = 3
 
-tanh_gain = 5 / 3
-layers = Sequential([Embedding(n_dims_embedding), 
+# tanh_gain = 5 / 3
+layers = Sequential([Embedding(n_dims_embedding, n_possible_chars), 
                      Flatten(),
                      Linear(n_dims_embedding * block_size, n_hidden, 
-                            biases=False),  #init_gain=tanh_gain, 
+                            biases=False),  # init_gain=tanh_gain, 
                      BatchNorm1(n_hidden), 
                      Tanh(), 
                      Linear(n_hidden, n_possible_chars),
 ])
-layers.layers[-1].weight *= 0.1
+with torch.no_grad():
+    layers.layers[-1].weight *= 0.1
 
 parameters = layers.parameters()
 print(sum([p.nelement() for p in parameters]))
@@ -191,7 +190,7 @@ for param in parameters:
     param.requires_grad = True
 
 # %%
-lrs = torch.cat([torch.ones(150000) * 1, torch.ones(50000) * 0.01])
+lrs = torch.cat([torch.ones(150000) * 0.1, torch.ones(50000) * 0.01])
 
 ud = []
 
@@ -215,11 +214,16 @@ for i, lr in tqdm(list(enumerate(lrs))):
 
     if i % 10000 == 0:
         print(
-            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss.item():.4f}, "
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, "
         )
+
+    # if i > 10000:
+    #     break
 
 # %%
 plt.figure()
+# plt.plot(torch.tensor(train_loss))  #.view(-1, 10).mean(dim=1))
+
 plt.plot(torch.tensor(train_loss).view(-1, 1000).mean(dim=1))
 # %%
 # Evaluate:
