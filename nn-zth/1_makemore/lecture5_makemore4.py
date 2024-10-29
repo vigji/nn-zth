@@ -1,5 +1,5 @@
 # %%
-# Let's improve our generator in the direction of Bangio et al 2006
+from audioop import bias
 from matplotlib import cm
 import torch
 import torch.nn.functional as F
@@ -22,6 +22,8 @@ stoi = {s: i + 1 for i, s in enumerate(chars)}
 stoi[PAD_CH] = 0
 itos = {s: i for i, s in stoi.items()}
 
+block_size = 3
+
 import random
 
 random.seed(42)
@@ -35,7 +37,7 @@ for word in words:
         Y.append(iy)
         X.append([stoi[cch] for cch in context])
 
-    context = context[1:] + [ch]
+        context = context[1:] + [ch]
 
 X = torch.tensor(X)
 Y = torch.tensor(Y)
@@ -51,19 +53,22 @@ Xdev, Ydev = X[n_train : n_train + n_val].to(device), Y[n_train : n_train + n_va
 )
 Xte, Yte = X[n_train + n_val :].to(device), Y[n_train + n_val :].to(device)
 
+Y
 # %%
 
 class Linear:
-    def __init__(self, fan_in, fan_out, biases=True, init_gain=1, generator=None):
+    def __init__(self, fan_in, fan_out, biases=True, init_gain=1):
         initialization_gain = init_gain / (fan_in**0.5)
         self.weight = torch.randn(
-            (fan_in, fan_out), generator=generator
+            (fan_in, fan_out)
         )  * initialization_gain
 
         self.bias = torch.zeros(fan_out) if biases else None
 
     def __call__(self, X):
-        self.out = X @ self.weight + self.bias
+        self.out = X @ self.weight
+        if self.bias is not None:
+            self.out += self.bias
         return self.out
 
     def parameters(self):
@@ -124,55 +129,58 @@ class Tanh:
         return self.out
 
 
+class Embedding:
+    def __init__(self, n_embeddings, n_possible_chars=27) -> None:
+        self.weight = torch.randn(n_possible_chars, n_dims_embedding).to(device)
+
+    def parameters(self) -> None:
+        return [self.weight]
+    
+    def __call__(self, Xidx) -> torch.Any:
+        return self.weight[Xidx]
+
+
+class Flatten:
+    def __call__(self, X) -> torch.Any:
+        self.out = X.view(X.shape[0], -1)
+        return self.out
+
+
 # %%
+torch.manual_seed(42)
 # let's now refactoring the network:
-n_embd = 10
 n_hidden = 200
 batch_size = 32
 n_dims_embedding = 10
 block_size = 3
 
-lrs = torch.cat([torch.ones(150000) * 1, torch.ones(50000) * 0.01])
-
 n_hidden_layers = 4
 tanh_gain = 5 / 3
 layers = [
-    Linear(n_dims_embedding * block_size, n_hidden, generator=g, init_gain=tanh_gain),
-    BatchNorm1(n_hidden),
-    Tanh(),
+    Linear(n_dims_embedding * block_size, n_hidden, init_gain=tanh_gain, biases=False),
+    BatchNorm1(n_hidden), Tanh(), Linear(n_hidden, n_possible_chars),
 ]
-
-for _ in range(n_hidden_layers):
-    new_layer = [
-        Linear(n_hidden, n_hidden, generator=g, init_gain=tanh_gain),
-        BatchNorm1(n_hidden),
-        Tanh(),
-    ]
-    layers += new_layer
-
-layers += [
-    Linear(n_hidden, n_possible_chars, generator=g),
-    BatchNorm1(n_possible_chars, gamma_coef=0.1),
-]  # arbitrarily less confident
 
 parameters = [
     C,
 ] + [p for layer in layers for p in layer.parameters()]
-print(sum([p.data.sum() for p in parameters]))
+print(sum([p.nelement() for p in parameters]))
 for param in parameters:
     param.requires_grad = True
 
 # %%
+lrs = torch.cat([torch.ones(150000) * 1, torch.ones(50000) * 0.01])
+
 ud = []
 
 train_loss, val_loss = [], []
-for i, lr in enumerate(lrs):
-    ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)
+for i, lr in tqdm(list(enumerate(lrs))):
+    ix = torch.randint(0, Xtr.shape[0], (batch_size,), )
 
     Xb, Yb = Xtr[ix], Ytr[ix]
 
     # forward pass:
-    x = C[Xb].view(-1, n_inputs)
+    x = C[Xb].view(batch_size, -1)
     for j, layer in enumerate(layers):
         x = layer(x)
 
@@ -191,14 +199,19 @@ for i, lr in enumerate(lrs):
 
     if i % 10000 == 0:
         print(
-            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss_val.item():.4f}, "
+            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, loss val {loss.item():.4f}, "
         )
 
-    with torch.no_grad():
-        ud.append(
-            [(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters]
-        )
+    # with torch.no_grad():
+    #     ud.append(
+    #         [(lr * p.grad.std() / p.data.std()).log10().item() for p in parameters]
+    #     )
 
     # if i > 1000:
     #     break
+# %%
+plt.figure()
+plt.plot(torch.tensor(train_loss).view(-1, 1000).mean(dim=1))
+# %%
+x
 # %%
