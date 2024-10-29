@@ -20,7 +20,7 @@ stoi = {s: i + 1 for i, s in enumerate(chars)}
 stoi[PAD_CH] = 0
 itos = {s: i for i, s in stoi.items()}
 
-block_size = 3
+block_size = 8
 
 import random
 
@@ -170,7 +170,6 @@ torch.manual_seed(42)
 n_hidden = 200
 batch_size = 32
 n_dims_embedding = 10
-block_size = 3
 
 # tanh_gain = 5 / 3
 layers = Sequential([Embedding(n_dims_embedding, n_possible_chars), 
@@ -267,4 +266,15 @@ for _ in range(n_to_produce):
     print("".join(chars))
 
 
+# %%
+# we will create joint embeddings for doublets of characters. 
+# To do so, we combine the embeddings two-by-two:
+x = torch.randn((batch_size, block_size, n_dims_embedding))
+torch.cat([x[:, ::2, :], x[:, 1::2, :]], dim=-1).shape
+# this is the same as
+x.view(batch_size, -1, n_dims_embedding*2).shape
+# we will update flatten to accept an argument for doing this 
+# (NB: this will be different from pytorch  flatten!!)
+ # %%
+x[:, 1::2, :].shape
 # %%
