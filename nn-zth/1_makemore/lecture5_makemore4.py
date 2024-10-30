@@ -1,4 +1,5 @@
 # %%
+# Implementing WaveNet!
 from regex import D
 import torch
 import torch.nn.functional as F
@@ -296,10 +297,49 @@ class Flatten:
     def parameters(self) -> None:
         return []
 # %%
+# Before we can use this new version, we have to fix the batchnorm, as it is currently taking the mean only over the first dimension:
+class BatchNorm1:
+    def __init__(self, dim, eps=1e-5, momentum=0.1, gamma_coef=1) -> None:
+        self.eps = eps
+        self.momentum = momentum
+        self.training = True
+
+        self.gamma = torch.ones((1, dim)) * gamma_coef
+        self.beta = torch.zeros((1, dim))
+
+        self.running_mean = torch.zeros((1, dim))
+        self.running_std = torch.zeros((1, dim))
+
+    def parameters(self):
+        return [self.gamma, self.beta]
+
+    def __call__(self, X: torch.Any) -> torch.Any:
+        dims_to_avg = tuple(range(len(X.shape) - 1))
+        if self.training:
+            mean = X.mean(dim=dims_to_avg, keepdim=True)
+            std = X.std(dim=dims_to_avg, keepdim=True)
+
+            # context to avoid torch to keep track of those not needing backprop:
+            with torch.no_grad():
+                self.running_mean = (
+                    1 - self.momentum
+                ) * self.running_mean + self.momentum * mean
+                self.running_std = (
+                    1 - self.momentum
+                ) * self.running_std + self.momentum * std
+        else:
+            mean = self.running_mean
+            std = self.running_std
+
+        # just for tracking purposes:
+        self.out = self.gamma * (X - mean) / std + self.beta
+        return self.out
+
+
 # Let's now use the new Flatten layer:
 torch.manual_seed(42)
 
-n_hidden = 200
+n_hidden = 68
 batch_size = 32
 n_dims_embedding = 10
 
@@ -326,14 +366,6 @@ for layer in layers.layers:
     print(layer.__class__.__name__, layer.out.shape)
 
  # %%
-
-# %%
-
-# %%
- 
-# %%
-
-# %%
 lrs = torch.cat([torch.ones(150000) * 0.1, torch.ones(50000) * 0.01])
 
 ud = []
@@ -361,3 +393,12 @@ for i, lr in tqdm(list(enumerate(lrs))):
 
     # if i > 10000:
     #     break
+
+# %%
+test_loss("train")
+test_loss("test")
+
+plt.figure()
+ 
+plt.plot(torch.tensor(train_loss).view(-1, 1000).mean(dim=1))
+# %%
