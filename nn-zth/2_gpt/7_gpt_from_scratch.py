@@ -67,17 +67,57 @@ class BigramModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
 
-    def forward(self, context, target):
+    def forward(self, context, target=None):
         logits = self.token_embedding_table(context)
+        # print(logits.shape)
 
-        logits = einops.rearrange(logits, 'b t c -> (b t) c')
-        print(logits.shape)
+        if target is not None:
+            target = einops.rearrange(target, 'b t -> (b t)')
+            logits = einops.rearrange(logits, 'b t c -> (b t) c')
+            loss = F.cross_entropy(logits, target)
+        else:
+            loss = None
 
-        loss = F.cross_entropy(logits, target)
-        
+        return logits, loss
+    
+    def generate(self, context, max_n_tokens):
 
-        return logits
+        for _ in range(max_n_tokens):
+            logits, _ = self(context, None)
+            logits = logits[:, -1, :]
+
+            probs = F.softmax(logits, dim=-1)
+
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            context = torch.cat([context, next_token], dim=1)
+
+        return context
     
 m = BigramModel(vocab_size)
-m(xb, yb).shape
+logits, loss = m(xb, yb)
+# print(logits.shape)
+# print(loss)
+starting_point = torch.zeros((1, 1), dtype=torch.long)
+pred = m.generate(starting_point, 100)
+print(decode(pred[0].tolist()))
+# %%
+# optimizer:
+optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
+
+batch_size = 32
+# training loop:
+n_batches = 1000
+
+for i in tqdm(range(n_batches)):
+    xs, ys = get_batch("train", batch_size=batch_size)
+
+    logits, loss = m(xs, ys)
+    for param in p.parameters():
+        param.grad = 0
+
+    loss.backward()
+
+    optimizer.step()
+
 # %%
