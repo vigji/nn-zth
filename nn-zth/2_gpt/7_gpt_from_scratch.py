@@ -8,6 +8,8 @@ import einops
 with open("tiny_squotilancia.txt", "r") as f:
     text = f.read()
 
+device = "mps"
+
 print(len(text))
 # %%
 chars = sorted(list(set(text)))
@@ -52,8 +54,8 @@ def get_batch(split, batch_size=4):
         raise ValueError("split must be 'train' or 'val'")
     
     start_idx = torch.randint(0, data.size(0) - block_size, (batch_size,))
-    X = torch.stack([data[idx:idx + block_size] for idx in start_idx])
-    Y = torch.stack([data[idx+1:idx + block_size+1] for idx in start_idx])
+    X = torch.stack([data[idx:idx + block_size] for idx in start_idx]).to(device)
+    Y = torch.stack([data[idx+1:idx + block_size+1] for idx in start_idx]).to(device)
     return X, Y
 
 xb, yb = get_batch("train", batch_size=4)
@@ -94,12 +96,35 @@ class BigramModel(nn.Module):
 
         return context
     
-    def auto_generate(self):
-        starting_point = torch.zeros((1, 1), dtype=torch.long)
-        pred = self.generate(starting_point, 100)
-        print(decode(pred[0].tolist()))
 
-    
+@torch.no_grad
+def eval_loss(model, loss_iters=300):
+    loss_dict = {}
+    model.eval()
+    for split in "train", "test":
+        losses = torch.zeros(loss_iters)
+        for i in range(loss_iters):
+            xb, yb = get_batch(split=split)
+            _, loss = model(xb, yb)
+
+            losses[i] = loss
+        loss_dict[split] = losses.mean().item()
+
+    model.train()
+    return loss_dict
+        
+
+def auto_generate(model):
+    starting_point = torch.zeros((1, 1), dtype=torch.long).to(device)
+    pred = model.generate(starting_point, 100)
+    print(decode(pred[0].tolist()))
+# %%
+batch_size = 32
+# training loop:
+n_batches = 3000
+lr=1e-3
+
+
 m = BigramModel(vocab_size)
 logits, loss = m(xb, yb)
 # print(logits.shape)
@@ -109,9 +134,9 @@ m.auto_generate()
 # optimizer:
 optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
 
-batch_size = 32
-# training loop:
-n_batches = 100000
+
+
+
 
 for i in tqdm(range(n_batches)):
     xs, ys = get_batch("train", batch_size=batch_size)
