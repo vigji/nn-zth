@@ -105,24 +105,23 @@ logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
 m.auto_generate()
-# %%
+
 # optimizer:
 optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
 
 batch_size = 32
 # training loop:
-n_batches = 1000
+n_batches = 100000
 
 for i in tqdm(range(n_batches)):
     xs, ys = get_batch("train", batch_size=batch_size)
 
     logits, loss = m(xs, ys)
-    for param in m.parameters():
-        param.grad = None
+    optimizer.zero_grad(set_to_none=True)
 
     loss.backward()
 
     optimizer.step()
-
+print(loss.item())
 m.auto_generate()
 # %%
