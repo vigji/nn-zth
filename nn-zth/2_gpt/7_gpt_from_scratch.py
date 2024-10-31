@@ -94,13 +94,17 @@ class BigramModel(nn.Module):
 
         return context
     
+    def auto_generate(self):
+        starting_point = torch.zeros((1, 1), dtype=torch.long)
+        pred = self.generate(starting_point, 100)
+        print(decode(pred[0].tolist()))
+
+    
 m = BigramModel(vocab_size)
 logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
-starting_point = torch.zeros((1, 1), dtype=torch.long)
-pred = m.generate(starting_point, 100)
-print(decode(pred[0].tolist()))
+m.auto_generate()
 # %%
 # optimizer:
 optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
@@ -113,11 +117,12 @@ for i in tqdm(range(n_batches)):
     xs, ys = get_batch("train", batch_size=batch_size)
 
     logits, loss = m(xs, ys)
-    for param in p.parameters():
-        param.grad = 0
+    for param in m.parameters():
+        param.grad = None
 
     loss.backward()
 
     optimizer.step()
 
+m.auto_generate()
 # %%
