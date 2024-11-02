@@ -164,5 +164,24 @@ for b in range(B):
         xprev = x[b, :t+1, :] # shape t, C
         xbow[b, t] = xprev.mean(dim=0)
 
+# To see how to do this efficienly with matmult, look at this:
+a = torch.ones((3, 3))
+b = torch.randint(0, 10, (3, 2)).float()
+c = a @ b  # this has columns sum in every entry of each column
+print(a)
+print(b)
+print(c)
+print("--------")
+# and now a trick:
+a = torch.tril(a)
+c = a @ b  # this now becomes a cumulative sum for each row!
 
- # %%
+print(a)
+print(b)
+print(c)
+print("--------")
+# for the rolling average we can simply:
+c /= a.sum(dim=1, keepdim=True)
+print(c)
+
+# %%
