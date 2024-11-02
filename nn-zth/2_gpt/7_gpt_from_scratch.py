@@ -151,3 +151,18 @@ print(eval_loss(m))
 # %%
 auto_generate(m, points=1000)
 # %%
+# The trick of self attention!
+torch.manual_seed(1337)
+B, T, C = 4, 8, 2
+x = torch.randn((B, T, C))
+
+# For every batch, for every T, let's try to calculate average up to current token
+
+xbow = torch.zeros((B, T, C))
+for b in range(B):
+    for t in range(T):
+        xprev = x[b, :t+1, :] # shape t, C
+        xbow[b, t] = xprev.mean(dim=0)
+
+
+ # %%
