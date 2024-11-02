@@ -82,6 +82,7 @@ class BigramModel(nn.Module):
 
         return logits, loss
     
+    @torch.no_grad
     def generate(self, context, max_n_tokens):
 
         for _ in range(max_n_tokens):
@@ -101,7 +102,7 @@ class BigramModel(nn.Module):
 def eval_loss(model, loss_iters=300):
     loss_dict = {}
     model.eval()
-    for split in "train", "test":
+    for split in "train", "val":
         losses = torch.zeros(loss_iters)
         for i in range(loss_iters):
             xb, yb = get_batch(split=split)
@@ -114,28 +115,27 @@ def eval_loss(model, loss_iters=300):
     return loss_dict
         
 
-def auto_generate(model):
+def auto_generate(model, points=100):
     starting_point = torch.zeros((1, 1), dtype=torch.long).to(device)
-    pred = model.generate(starting_point, 100)
+    pred = model.generate(starting_point, points)
     print(decode(pred[0].tolist()))
 # %%
 batch_size = 32
 # training loop:
-n_batches = 3000
+n_batches = 100000
 lr=1e-3
 
 
-m = BigramModel(vocab_size)
+m = BigramModel(vocab_size).to(device)
 logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
-m.auto_generate()
+auto_generate(m)
 
 # optimizer:
 optimizer = torch.optim.Adam(m.parameters(), lr=1e-3)
 
-
-
+print(eval_loss(m))
 
 
 for i in tqdm(range(n_batches)):
@@ -147,6 +147,7 @@ for i in tqdm(range(n_batches)):
     loss.backward()
 
     optimizer.step()
-print(loss.item())
-m.auto_generate()
+print(eval_loss(m))
+# %%
+auto_generate(m, points=1000)
 # %%
