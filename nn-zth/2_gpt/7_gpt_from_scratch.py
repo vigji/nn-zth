@@ -185,3 +185,29 @@ c /= a.sum(dim=1, keepdim=True)
 print(c)
 
 # %%
+# Now back to our original matrix multiplication:
+torch.manual_seed(1337)
+B, T, C = 4, 8, 2
+x = torch.randn((B, T, C))
+
+weight = torch.tril(torch.ones((T, T)))
+weight /= weight.sum(dim=1, keepdim=True)
+xbow2 = weight @ x  # this will broacast the batch dimension B
+
+print(torch.allclose(xbow, xbow2))
+
+# %%
+# What we will actually do with self attention is to use weights and normalize them
+# using softmax:
+xbow2[0, :, :], x[0, :, :]
+
+# %%
+tril = torch.tril(torch.ones((T, T), dtype=bool))
+weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float('-inf'))
+weight_sm = torch.softmax(weight, dim=1)
+xbow3 = weight_sm @ x  # this will broacast the batch dimension B
+
+print(torch.allclose(xbow, xbow3))
+# %%
+weight_sm
+# %%
