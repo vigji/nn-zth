@@ -211,3 +211,46 @@ print(torch.allclose(xbow, xbow3))
 # %%
 weight_sm
 # %%
+# Moving toward transformer models:
+
+import torch.nn as nn
+from torch.nn import functional as F
+
+class BigramModel(nn.Module):
+    def __init__(self, vocab_size, n_embs, block_size=8):
+        super().__init__()
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embs)
+        self.positional_embedding_table = nn.Embedding(block_size, n_embs)
+        self.lm_head = nn.Linear(n_embs, vocab_size)
+
+    def forward(self, context, target=None):
+        B, T = context.shape
+        embs = self.token_embedding_table(context)
+        pos_embs = self.positional_embedding_table(torch.arange(T))  # 
+
+        logits = self.lm_head(embs + pos_embs)
+        
+
+        if target is None:
+            loss = None
+        else:
+            target = einops.rearrange(target, 'b t -> (b t)')
+            logits = einops.rearrange(logits, 'b t c -> (b t) c')
+            loss = F.cross_entropy(logits, target)
+
+        return logits, loss
+    
+    @torch.no_grad
+    def generate(self, context, max_n_tokens):
+
+        for _ in range(max_n_tokens):
+            logits, _ = self(context, None)
+            logits = logits[:, -1, :]
+
+            probs = F.softmax(logits, dim=-1)
+
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            context = torch.cat([context, next_token], dim=1)
+
+        return context
