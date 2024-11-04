@@ -211,6 +211,31 @@ print(torch.allclose(xbow, xbow3))
 # %%
 weight_sm
 # %%
+# self attention:
+torch.manual_seed(1337)
+B, T, C = 4, 8, 32
+x = torch.randn((B, T, C)) 
+
+head_size = 16
+query = nn.Linear(C, head_size, bias=False)
+key = nn.Linear(C, head_size, bias=False)
+
+
+q = query(x)
+k = key(x)
+q.shape, k.shape
+weights = q @ einops.rearrange(k, "b t c -> b c t")
+
+tril = torch.tril(torch.ones((T, T), dtype=bool))
+weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float('-inf'))
+weight = torch.softmax(weight, dim=1)
+out = weight @ x  # this will broacast the batch dimension B
+
+
+
+# %%
+
+# %%
 # Moving toward transformer models:
 
 import torch.nn as nn
@@ -226,7 +251,7 @@ class BigramModel(nn.Module):
     def forward(self, context, target=None):
         B, T = context.shape
         embs = self.token_embedding_table(context)
-        pos_embs = self.positional_embedding_table(torch.arange(T))  # 
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))  # 
 
         logits = self.lm_head(embs + pos_embs)
         
@@ -254,3 +279,4 @@ class BigramModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
+
