@@ -219,17 +219,26 @@ x = torch.randn((B, T, C))
 head_size = 16
 query = nn.Linear(C, head_size, bias=False)
 key = nn.Linear(C, head_size, bias=False)
+value = nn.Linear(C, head_size, bias=False)
 
 
-q = query(x)
-k = key(x)
+# in self-attention all those are computed from x. in cross attention v and k comes from
+# a separate input
+q = query(x)  # broadcasting what i look for
+k = key(x)  # broadcasting what i have
+v = value(x)  # actual passed values
 q.shape, k.shape
 weights = q @ einops.rearrange(k, "b t c -> b c t")
 
+# to avoi passing too peaky distributions inside softmax, we first normalize here:
+weights *= head_size **-0.5
+
+# trianular masking happens in a decoder head, encoder heads do not have it and all tokens
+# can look at all other tokens.
 tril = torch.tril(torch.ones((T, T), dtype=bool))
 weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float('-inf'))
 weight = torch.softmax(weight, dim=1)
-out = weight @ x  # this will broacast the batch dimension B
+out = weight @ v  # this will broacast the batch dimension B
 
 
 
