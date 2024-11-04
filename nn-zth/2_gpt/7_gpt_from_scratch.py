@@ -250,7 +250,37 @@ out = weight @ v  # this will broacast the batch dimension B
 import torch.nn as nn
 from torch.nn import functional as F
 
-class BigramModel(nn.Module):
+
+class Head(nn.Module):
+    def __init__(self, head_size, n_embs):
+        super().__init__()
+        self.key = nn.Linear(n_embs, head_size, bias=False)
+        self.query = nn.Linear(n_embs, head_size, bias=False)
+        self.value = nn.Linear(n_embs, head_size, bias=False)
+
+        # tril is not really a parameter of the mode:
+        self.register_buffer('tril', torch.tril(torch.ones((T, T), dtype=bool))
+)
+
+
+    def forward(self, context, target=None):
+        q = self.query(x)  # broadcasting what i look for
+        k = self.key(x)  # broadcasting what i have
+        v = self.value(x)  # actual passed values
+
+        weights = q @ einops.rearrange(k, "b t c -> b c t")
+
+        # to avoi passing too peaky distributions inside softmax, we first normalize here:
+        weights *= head_size ** -0.5
+
+        # trianular masking happens in a decoder head, encoder heads do not have it and all tokens
+        # can look at all other tokens.
+        weight = torch.masked_fill(torch.zeros((T, T)), ~self. tril, float('-inf'))
+        weight = torch.softmax(weight, dim=1)
+        return weight @ v  # this will broacast the batch dimension B
+    
+
+class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embs, block_size=8):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embs)
