@@ -143,63 +143,98 @@ HOLDOUT_DATA_DICT = dict()
 for data, target in DataLoader(testset, batch_size=1):
     if target.item() not in HOLDOUT_DATA_DICT:
         HOLDOUT_DATA_DICT[target.item()] = data.squeeze()
-        if len(HOLDOUT_DATA_DICT) == 10: break
-HOLDOUT_DATA = t.stack([HOLDOUT_DATA_DICT[i] for i in range(10)]).to(dtype=t.float, device=device).unsqueeze(1)
+        if len(HOLDOUT_DATA_DICT) == 10:
+            break
+HOLDOUT_DATA = (
+    t.stack([HOLDOUT_DATA_DICT[i] for i in range(10)])
+    .to(dtype=t.float, device=device)
+    .unsqueeze(1)
+)
 
 display_data(HOLDOUT_DATA, nrows=1, title="MNIST holdout data")
 # %%
 
 # Implementing an autoencoder
 
-class Autoencoder(nn.Module):
 
+class Autoencoder(nn.Module):
     def __init__(self, latent_dim_size: int, hidden_dim_size: int):
         super().__init__()
         # Your code here
         # Input 28 x 28
         self.latent_dim_size = latent_dim_size
         self.hidden_dim_size = hidden_dim_size
-        
-        self.encoder = nn.Sequential(
-                # Conv kernel 4x4, stride 2, padding 1, channels -> 16
-                nn.Conv2d(in_channels=1, out_channels=16, kernel_size=4, stride=2, padding=1, bias=False),
-                nn.ReLU(),
-                # Conv kernel 4x4, stride 2, padding 1, channels 16 -> 32
-                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=2, padding=1, bias=False),
-                nn.ReLU(),
-                # reshape to linear, then Linear layer with hidden_dim_size
-                einops.layers.torch.Rearrange('b c h w -> b (c h w)'),
-                nn.Linear(32*7*7, hidden_dim_size),
-                nn.ReLU(),
-                # Linear layer with latent_dim_size:
-                nn.Linear(hidden_dim_size, latent_dim_size),
-                # ReLU?
-                nn.ReLU())
-                # END OF ENCODER
-        self.decoder = nn.Sequential(
-                # Linear layer with hidden_dim_size
-                nn.Linear(latent_dim_size, hidden_dim_size),
-                nn.ReLU(),
-                # Linear layer with 32*7*7
-                nn.Linear(hidden_dim_size, 32*7*7),
-                nn.ReLU(),
-                # reshape to 32x7x7
-                einops.layers.torch.Rearrange('b (c h w) -> b c h w', c=32, h=7, w=7),
-                # ConvTranspose kernel 4x4, stride 2, padding 1, channels 32 -> 16
-                nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=4, stride=2, padding=1, bias=False),
-                nn.ReLU(),
-                # ConvTranspose kernel 4x4, stride 2, padding 1, channels 16 -> 1
-                nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=4, stride=2, padding=1, bias=False),    
-        )
 
+        self.encoder = nn.Sequential(
+            # Conv kernel 4x4, stride 2, padding 1, channels -> 16
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=16,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            ),
+            nn.ReLU(),
+            # Conv kernel 4x4, stride 2, padding 1, channels 16 -> 32
+            nn.Conv2d(
+                in_channels=16,
+                out_channels=32,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            ),
+            nn.ReLU(),
+            # reshape to linear, then Linear layer with hidden_dim_size
+            einops.layers.torch.Rearrange("b c h w -> b (c h w)"),
+            nn.Linear(32 * 7 * 7, hidden_dim_size),
+            nn.ReLU(),
+            # Linear layer with latent_dim_size:
+            nn.Linear(hidden_dim_size, latent_dim_size),
+            # ReLU?
+            nn.ReLU(),
+        )
+        # END OF ENCODER
+        self.decoder = nn.Sequential(
+            # Linear layer with hidden_dim_size
+            nn.Linear(latent_dim_size, hidden_dim_size),
+            nn.ReLU(),
+            # Linear layer with 32*7*7
+            nn.Linear(hidden_dim_size, 32 * 7 * 7),
+            nn.ReLU(),
+            # reshape to 32x7x7
+            einops.layers.torch.Rearrange("b (c h w) -> b c h w", c=32, h=7, w=7),
+            # ConvTranspose kernel 4x4, stride 2, padding 1, channels 32 -> 16
+            nn.ConvTranspose2d(
+                in_channels=32,
+                out_channels=16,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            ),
+            nn.ReLU(),
+            # ConvTranspose kernel 4x4, stride 2, padding 1, channels 16 -> 1
+            nn.ConvTranspose2d(
+                in_channels=16,
+                out_channels=1,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            ),
+        )
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         # Your code here
         encoded = self.layers(x)
         decoded = self.decoder(encoded)
         return decoded
-    
+
+
 import solutions
+
 soln_Autoencoder = solutions.Autoencoder(latent_dim_size=5, hidden_dim_size=128)
 my_Autoencoder = Autoencoder(latent_dim_size=5, hidden_dim_size=128)
 

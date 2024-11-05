@@ -25,7 +25,7 @@ encode = lambda x: [stoi[ch] for ch in x]
 decode = lambda x: "".join([itos[i] for i in x])
 
 print(encode("ciao"), decode(encode("ciao")))
- # %%
+# %%
 perc_train = 0.9
 n_split = int(len(text) * perc_train)
 
@@ -37,13 +37,14 @@ print(train_data[:10])
 # %%
 block_size = 8
 X = train_data[:block_size]
-Y = train_data[1:block_size+1]
+Y = train_data[1 : block_size + 1]
 for t in range(block_size):
     context = X[:t]
     target = Y[t]
 # %%
 torch.manual_seed(1337)
 batch_size = 4
+
 
 def get_batch(split, batch_size=4):
     if split == "train":
@@ -52,17 +53,21 @@ def get_batch(split, batch_size=4):
         data = val_data
     else:
         raise ValueError("split must be 'train' or 'val'")
-    
+
     start_idx = torch.randint(0, data.size(0) - block_size, (batch_size,))
-    X = torch.stack([data[idx:idx + block_size] for idx in start_idx]).to(device)
-    Y = torch.stack([data[idx+1:idx + block_size+1] for idx in start_idx]).to(device)
+    X = torch.stack([data[idx : idx + block_size] for idx in start_idx]).to(device)
+    Y = torch.stack([data[idx + 1 : idx + block_size + 1] for idx in start_idx]).to(
+        device
+    )
     return X, Y
+
 
 xb, yb = get_batch("train", batch_size=4)
 print(xb.shape, yb.shape)
 # %%
 import torch.nn as nn
 from torch.nn import functional as F
+
 
 class BigramModel(nn.Module):
     def __init__(self, vocab_size):
@@ -74,17 +79,16 @@ class BigramModel(nn.Module):
         # print(logits.shape)
 
         if target is not None:
-            target = einops.rearrange(target, 'b t -> (b t)')
-            logits = einops.rearrange(logits, 'b t c -> (b t) c')
+            target = einops.rearrange(target, "b t -> (b t)")
+            logits = einops.rearrange(logits, "b t c -> (b t) c")
             loss = F.cross_entropy(logits, target)
         else:
             loss = None
 
         return logits, loss
-    
+
     @torch.no_grad
     def generate(self, context, max_n_tokens):
-
         for _ in range(max_n_tokens):
             logits, _ = self(context, None)
             logits = logits[:, -1, :]
@@ -96,7 +100,7 @@ class BigramModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
-    
+
 
 @torch.no_grad
 def eval_loss(model, loss_iters=300):
@@ -113,17 +117,19 @@ def eval_loss(model, loss_iters=300):
 
     model.train()
     return loss_dict
-        
+
 
 def auto_generate(model, points=100):
     starting_point = torch.zeros((1, 1), dtype=torch.long).to(device)
     pred = model.generate(starting_point, points)
     print(decode(pred[0].tolist()))
+
+
 # %%
 batch_size = 32
 # training loop:
 n_batches = 100000
-lr=1e-3
+lr = 1e-3
 
 
 m = BigramModel(vocab_size).to(device)
@@ -161,7 +167,7 @@ x = torch.randn((B, T, C))
 xbow = torch.zeros((B, T, C))
 for b in range(B):
     for t in range(T):
-        xprev = x[b, :t+1, :] # shape t, C
+        xprev = x[b, : t + 1, :]  # shape t, C
         xbow[b, t] = xprev.mean(dim=0)
 
 # To see how to do this efficienly with matmult, look at this:
@@ -203,7 +209,7 @@ xbow2[0, :, :], x[0, :, :]
 
 # %%
 tril = torch.tril(torch.ones((T, T), dtype=bool))
-weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float('-inf'))
+weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float("-inf"))
 weight_sm = torch.softmax(weight, dim=1)
 xbow3 = weight_sm @ x  # this will broacast the batch dimension B
 
@@ -214,7 +220,7 @@ weight_sm
 # self attention:
 torch.manual_seed(1337)
 B, T, C = 4, 8, 32
-x = torch.randn((B, T, C)) 
+x = torch.randn((B, T, C))
 
 head_size = 16
 query = nn.Linear(C, head_size, bias=False)
@@ -231,15 +237,14 @@ q.shape, k.shape
 weights = q @ einops.rearrange(k, "b t c -> b c t")
 
 # to avoi passing too peaky distributions inside softmax, we first normalize here:
-weights *= head_size **-0.5
+weights *= head_size**-0.5
 
 # trianular masking happens in a decoder head, encoder heads do not have it and all tokens
 # can look at all other tokens.
 tril = torch.tril(torch.ones((T, T), dtype=bool))
-weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float('-inf'))
+weight = torch.masked_fill(torch.zeros((T, T)), ~tril, float("-inf"))
 weight = torch.softmax(weight, dim=1)
 out = weight @ v  # this will broacast the batch dimension B
-
 
 
 # %%
@@ -259,9 +264,7 @@ class Head(nn.Module):
         self.value = nn.Linear(n_embs, head_size, bias=False)
 
         # tril is not really a parameter of the mode:
-        self.register_buffer('tril', torch.tril(torch.ones((T, T), dtype=bool))
-)
-
+        self.register_buffer("tril", torch.tril(torch.ones((T, T), dtype=bool)))
 
     def forward(self, context, target=None):
         q = self.query(x)  # broadcasting what i look for
@@ -271,14 +274,14 @@ class Head(nn.Module):
         weights = q @ einops.rearrange(k, "b t c -> b c t")
 
         # to avoi passing too peaky distributions inside softmax, we first normalize here:
-        weights *= head_size ** -0.5
+        weights *= head_size**-0.5
 
         # trianular masking happens in a decoder head, encoder heads do not have it and all tokens
         # can look at all other tokens.
-        weight = torch.masked_fill(torch.zeros((T, T)), ~self. tril, float('-inf'))
+        weight = torch.masked_fill(torch.zeros((T, T)), ~self.tril, float("-inf"))
         weight = torch.softmax(weight, dim=1)
         return weight @ v  # this will broacast the batch dimension B
-    
+
 
 class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embs, block_size=8):
@@ -290,23 +293,21 @@ class BigramLanguageModel(nn.Module):
     def forward(self, context, target=None):
         B, T = context.shape
         embs = self.token_embedding_table(context)
-        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))  # 
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))  #
 
         logits = self.lm_head(embs + pos_embs)
-        
 
         if target is None:
             loss = None
         else:
-            target = einops.rearrange(target, 'b t -> (b t)')
-            logits = einops.rearrange(logits, 'b t c -> (b t) c')
+            target = einops.rearrange(target, "b t -> (b t)")
+            logits = einops.rearrange(logits, "b t c -> (b t) c")
             loss = F.cross_entropy(logits, target)
 
         return logits, loss
-    
+
     @torch.no_grad
     def generate(self, context, max_n_tokens):
-
         for _ in range(max_n_tokens):
             logits, _ = self(context, None)
             logits = logits[:, -1, :]
@@ -318,4 +319,3 @@ class BigramLanguageModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
-

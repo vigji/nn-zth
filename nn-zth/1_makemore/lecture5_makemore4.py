@@ -56,12 +56,11 @@ Xte, Yte = X[n_train + n_val :].to(device), Y[n_train + n_val :].to(device)
 Y
 # %%
 
+
 class Linear:
     def __init__(self, fan_in, fan_out, biases=True, init_gain=1):
         initialization_gain = init_gain / (fan_in**0.5)
-        self.weight = torch.randn(
-            (fan_in, fan_out)
-        )  * initialization_gain
+        self.weight = torch.randn((fan_in, fan_out)) * initialization_gain
 
         self.bias = torch.zeros(fan_out) if biases else None
 
@@ -136,7 +135,7 @@ class Embedding:
 
     def parameters(self) -> None:
         return [self.weight]
-    
+
     def __call__(self, Xidx) -> torch.Any:
         self.out = self.weight[Xidx]
         return self.out
@@ -146,9 +145,10 @@ class Flatten:
     def __call__(self, X) -> torch.Any:
         self.out = X.view(X.shape[0], -1)
         return self.out
-    
+
     def parameters(self) -> None:
         return []
+
 
 class Sequential:
     def __init__(self, layers) -> None:
@@ -159,10 +159,9 @@ class Sequential:
             x = layer(x)
         self.out = x
         return self.out
-    
+
     def parameters(self):
         return [p for layer in self.layers for p in layer.parameters()]
-
 
 
 # %%
@@ -174,14 +173,18 @@ batch_size = 32
 n_dims_embedding = 10
 
 # tanh_gain = 5 / 3
-layers = Sequential([Embedding(n_dims_embedding, n_possible_chars), 
-                     Flatten(block_size),
-                     Linear(n_dims_embedding * block_size, n_hidden, 
-                            biases=False),  # init_gain=tanh_gain, 
-                     BatchNorm1(n_hidden), 
-                     Tanh(), 
-                     Linear(n_hidden, n_possible_chars),
-])
+layers = Sequential(
+    [
+        Embedding(n_dims_embedding, n_possible_chars),
+        Flatten(block_size),
+        Linear(
+            n_dims_embedding * block_size, n_hidden, biases=False
+        ),  # init_gain=tanh_gain,
+        BatchNorm1(n_hidden),
+        Tanh(),
+        Linear(n_hidden, n_possible_chars),
+    ]
+)
 with torch.no_grad():
     layers.layers[-1].weight *= 0.1
 
@@ -191,7 +194,11 @@ for param in parameters:
     param.requires_grad = True
 
 # batch of just 4:
-ix = torch.randint(0, Xtr.shape[0], (4,), )
+ix = torch.randint(
+    0,
+    Xtr.shape[0],
+    (4,),
+)
 Xb, Yb = Xtr[ix], Ytr[ix]
 logits = layers(Xb)
 for layer in layers.layers:
@@ -204,7 +211,11 @@ ud = []
 
 train_loss, val_loss = [], []
 for i, lr in tqdm(list(enumerate(lrs))):
-    ix = torch.randint(0, Xtr.shape[0], (batch_size,), )
+    ix = torch.randint(
+        0,
+        Xtr.shape[0],
+        (batch_size,),
+    )
     Xb, Yb = Xtr[ix], Ytr[ix]
     logits = layers(Xb)
 
@@ -219,14 +230,12 @@ for i, lr in tqdm(list(enumerate(lrs))):
         param.data += -lr * param.grad
 
     if i % 10000 == 0:
-        print(
-            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, "
-        )
+        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, ")
 
     # if i > 10000:
     #     break
 
- # %%
+# %%
 plt.figure()
 # plt.plot(torch.tensor(train_loss))  #.view(-1, 10).mean(dim=1))
 
@@ -236,14 +245,15 @@ plt.plot(torch.tensor(train_loss).view(-1, 1000).mean(dim=1))
 for layer in layers.layers:
     layer.training = False
 
+
 @torch.no_grad()
 def test_loss(split):
-    Xb, Yb = dict(dev=(Xdev, Ydev), test=(Xte, Yte),
-                  train=(Xtr, Ytr))[split]
+    Xb, Yb = dict(dev=(Xdev, Ydev), test=(Xte, Yte), train=(Xtr, Ytr))[split]
     logits = layers(Xb)
     loss = F.cross_entropy(logits, Yb)
 
     print(f"{split} -> loss: {loss.item():.4f}")
+
 
 test_loss("train")
 test_loss("test")
@@ -274,28 +284,32 @@ for _ in range(n_to_produce):
 
 
 # %%
-# we will create joint embeddings for doublets of characters. 
+# we will create joint embeddings for doublets of characters.
 # To do so, we combine the embeddings two-by-two:
 x = torch.randn((batch_size, block_size, n_dims_embedding))
 torch.cat([x[:, ::2, :], x[:, 1::2, :]], dim=-1).shape
 # this is the same as
-x.view(batch_size, -1, n_dims_embedding*2).shape
-# we will update flatten to accept an argument for doing this 
+x.view(batch_size, -1, n_dims_embedding * 2).shape
+
+
+# we will update flatten to accept an argument for doing this
 # (NB: this will be different from pytorch  flatten!!)
 class Flatten:
     def __init__(self, n=1) -> None:
         self.n = n  # if equal to block_size, this will be equal to prev behavior
-    
+
     def __call__(self, X) -> torch.Any:
-        B, L, D = X.shape 
-        self.out = X.view(B, L // self.n, D*self.n)
+        B, L, D = X.shape
+        self.out = X.view(B, L // self.n, D * self.n)
         if self.out.shape[1] == 1:
             self.out = self.out.squeeze(1)
-        
+
         return self.out
-    
+
     def parameters(self) -> None:
         return []
+
+
 # %%
 # Before we can use this new version, we have to fix the batchnorm, as it is currently taking the mean only over the first dimension:
 class BatchNorm1:
@@ -344,12 +358,24 @@ batch_size = 32
 n_dims_embedding = 10
 
 new_binning = 2
-layers = Sequential([Embedding(n_dims_embedding, n_possible_chars), 
-                     Flatten(new_binning), Linear(n_dims_embedding * new_binning, n_hidden, biases=False), BatchNorm1(n_hidden), Tanh(), 
-                     Flatten(new_binning), Linear(n_hidden * new_binning, n_hidden, biases=False), BatchNorm1(n_hidden), Tanh(), 
-                     Flatten(new_binning), Linear(n_hidden * new_binning, n_hidden, biases=False), BatchNorm1(n_hidden), Tanh(), 
-                     Linear(n_hidden, n_possible_chars),
-])
+layers = Sequential(
+    [
+        Embedding(n_dims_embedding, n_possible_chars),
+        Flatten(new_binning),
+        Linear(n_dims_embedding * new_binning, n_hidden, biases=False),
+        BatchNorm1(n_hidden),
+        Tanh(),
+        Flatten(new_binning),
+        Linear(n_hidden * new_binning, n_hidden, biases=False),
+        BatchNorm1(n_hidden),
+        Tanh(),
+        Flatten(new_binning),
+        Linear(n_hidden * new_binning, n_hidden, biases=False),
+        BatchNorm1(n_hidden),
+        Tanh(),
+        Linear(n_hidden, n_possible_chars),
+    ]
+)
 with torch.no_grad():
     layers.layers[-1].weight *= 0.1
 
@@ -359,20 +385,28 @@ for param in parameters:
     param.requires_grad = True
 
 # batch of just 4:
-ix = torch.randint(0, Xtr.shape[0], (4,), )
+ix = torch.randint(
+    0,
+    Xtr.shape[0],
+    (4,),
+)
 Xb, Yb = Xtr[ix], Ytr[ix]
 logits = layers(Xb)
 for layer in layers.layers:
     print(layer.__class__.__name__, layer.out.shape)
 
- # %%
+# %%
 lrs = torch.cat([torch.ones(150000) * 0.1, torch.ones(50000) * 0.01])
 
 ud = []
 
 train_loss, val_loss = [], []
 for i, lr in tqdm(list(enumerate(lrs))):
-    ix = torch.randint(0, Xtr.shape[0], (batch_size,), )
+    ix = torch.randint(
+        0,
+        Xtr.shape[0],
+        (batch_size,),
+    )
     Xb, Yb = Xtr[ix], Ytr[ix]
     logits = layers(Xb)
 
@@ -387,9 +421,7 @@ for i, lr in tqdm(list(enumerate(lrs))):
         param.data += -lr * param.grad
 
     if i % 10000 == 0:
-        print(
-            f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, "
-        )
+        print(f"{i:7d} / {len(lrs)}: loss {loss.item():.4f}, ")
 
     # if i > 10000:
     #     break
@@ -399,6 +431,6 @@ test_loss("train")
 test_loss("test")
 
 plt.figure()
- 
+
 plt.plot(torch.tensor(train_loss).view(-1, 1000).mean(dim=1))
 # %%
