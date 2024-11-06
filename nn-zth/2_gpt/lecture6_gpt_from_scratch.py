@@ -257,28 +257,29 @@ from torch.nn import functional as F
 
 
 class Head(nn.Module):
-    def __init__(self, head_size, n_embs):
+    def __init__(self, head_size, n_embs, block_size):
         super().__init__()
         self.key = nn.Linear(n_embs, head_size, bias=False)
         self.query = nn.Linear(n_embs, head_size, bias=False)
         self.value = nn.Linear(n_embs, head_size, bias=False)
 
         # tril is not really a parameter of the mode:
-        self.register_buffer("tril", torch.tril(torch.ones((T, T), dtype=bool)))
+        self.register_buffer("tril", torch.tril(torch.ones((block_size, block_size), dtype=bool)))
 
-    def forward(self, context, target=None):
+    def forward(self, x):
+        print("x", x.shape)
         q = self.query(x)  # broadcasting what i look for
         k = self.key(x)  # broadcasting what i have
         v = self.value(x)  # actual passed values
-
         weights = q @ einops.rearrange(k, "b t c -> b c t")
+        print("v", v.shape)
 
         # to avoi passing too peaky distributions inside softmax, we first normalize here:
         weights *= head_size**-0.5
 
         # trianular masking happens in a decoder head, encoder heads do not have it and all tokens
         # can look at all other tokens.
-        weight = torch.masked_fill(torch.zeros((T, T)), ~self.tril, float("-inf"))
+        weight = torch.masked_fill(torch.zeros((T, T), device=device), ~self.tril, float("-inf"))
         weight = torch.softmax(weight, dim=1)
         return weight @ v  # this will broacast the batch dimension B
 
@@ -289,7 +290,7 @@ class BigramLanguageModel(nn.Module):
         self.block_size = block_size
         self.token_embedding_table = nn.Embedding(vocab_size, n_embs)
         self.positional_embedding_table = nn.Embedding(block_size, n_embs)
-        self.sa_head = Head(head_size=head_size, n_embs=n_embs)
+        self.sa_head = Head(head_size=head_size, n_embs=n_embs, block_size=block_size)
         self.lm_head = nn.Linear(n_embs, vocab_size)
 
     def forward(self, context, target=None):
@@ -340,7 +341,8 @@ head_size = 16
 
 torch.manual_seed(1337)
 
-m = BigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size).to(device)
+m = BigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, 
+                        block_size=block_size, head_size=head_size).to(device)
 logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
@@ -363,7 +365,8 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 # %%
-
+m(xs, ys)
+# %%
 # What about multiple heads? We just get a bunch of heads to process things in parallel
 # and concatenate their output:
 
