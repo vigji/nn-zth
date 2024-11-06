@@ -363,3 +363,14 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 # %%
+
+# What about multiple heads? We just get a bunch of heads to process things in parallel
+# and concatenate their output:
+
+class MultipleHead(nn.Module)
+    def __init__(self, num_heads, heads_size) -> None:
+        self.multi_heads = nn.ModuleList([Head(head_size=head_size) for _ in range(num_heads)])
+
+    def forward(self, x):
+        return torch.cat([head(x) for head in self.multi_heads], dim=-1)
+        
