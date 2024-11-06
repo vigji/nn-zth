@@ -284,18 +284,22 @@ class Head(nn.Module):
 
 
 class BigramLanguageModel(nn.Module):
-    def __init__(self, vocab_size, n_embs, block_size=8):
+    def __init__(self, vocab_size, n_embs, block_size=8, head_size=16):
         super().__init__()
+        self.block_size = block_size
         self.token_embedding_table = nn.Embedding(vocab_size, n_embs)
         self.positional_embedding_table = nn.Embedding(block_size, n_embs)
+        self.sa_head = Head(head_size=head_size, n_embs=n_embs)
         self.lm_head = nn.Linear(n_embs, vocab_size)
 
     def forward(self, context, target=None):
         B, T = context.shape
         embs = self.token_embedding_table(context)
-        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))  #
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))
+        x = embs + pos_embs
+        x = self.sa_head(x)
 
-        logits = self.lm_head(embs + pos_embs)
+        logits = self.lm_head(x)
 
         if target is None:
             loss = None
@@ -309,7 +313,9 @@ class BigramLanguageModel(nn.Module):
     @torch.no_grad
     def generate(self, context, max_n_tokens):
         for _ in range(max_n_tokens):
-            logits, _ = self(context, None)
+            context_crop =  context[:, -self.block_size:]
+
+            logits, _ = self(context_crop, None)
             logits = logits[:, -1, :]
 
             probs = F.softmax(logits, dim=-1)
@@ -319,3 +325,41 @@ class BigramLanguageModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
+
+
+# adjusting hyperparams:
+batch_size = 32
+block_size = 8
+max_iters = 5000
+eval_interval = 500
+learning_rate = 1e-3
+eval_iters = 200
+n_embd = 32
+head_size = 16
+
+
+torch.manual_seed(1337)
+
+m = BigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size).to(device)
+logits, loss = m(xb, yb)
+# print(logits.shape)
+# print(loss)
+auto_generate(m)
+
+# optimizer:
+optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate)
+
+print(eval_loss(m))
+
+
+for i in tqdm(range(max_iters)):
+    xs, ys = get_batch("train", batch_size=batch_size)
+
+    logits, loss = m(xs, ys)
+    optimizer.zero_grad(set_to_none=True)
+
+    loss.backward()
+
+    optimizer.step()
+print(eval_loss(m))
+# %%
