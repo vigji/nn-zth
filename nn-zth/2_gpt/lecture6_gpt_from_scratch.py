@@ -539,3 +539,16 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 # %%
+
+class Block(nn.Module):
+    def __init__(self, n_embds, n_heads):
+        super().__init__()
+        head_size = n_embds // n_heads
+        self.multihead = MultipleHead(n_heads, head_size)
+        self.ff = FeedForward(n_embds, n_embds)
+
+    def forward(self, x):
+        x = self.multihead(x)
+        out = self.ff(x)
+
+        return out
