@@ -369,6 +369,87 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 
+# %%
+# What about multiple heads? We just get a bunch of heads to process things in parallel
+# and concatenate their output:
+
+class MultipleHead(nn.Module):
+    def __init__(self, num_heads, head_size) -> None:
+        self.multi_heads = nn.ModuleList([Head(head_size=head_size) for _ in range(num_heads)])
+
+    def forward(self, x):
+        return torch.cat([head(x) for head in self.multi_heads], dim=-1)
+    
+
+class MultiheadBigramLanguageModel(nn.Module):
+    def __init__(self, vocab_size, n_embs, block_size=8, head_size=16):
+        super().__init__()
+        self.block_size = block_size
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embs)
+        self.positional_embedding_table = nn.Embedding(block_size, n_embs)
+        self.sa_head = MultipleHead((4, n_embs // 4)
+        self.lm_head = nn.Linear(n_embs, vocab_size)
+
+    def forward(self, context, target=None):
+        B, T = context.shape
+        embs = self.token_embedding_table(context)
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))
+        x = embs + pos_embs
+        x = self.sa_head(x)
+        logits = self.lm_head(x)
+
+        if target is None:
+            loss = None
+        else:
+            target = einops.rearrange(target, "b t -> (b t)")
+            logits = einops.rearrange(logits, "b t c -> (b t) c")
+            loss = F.cross_entropy(logits, target)
+
+        return logits, loss
+
+    @torch.no_grad
+    def generate(self, context, max_n_tokens):
+        for i in range(max_n_tokens):
+            context_crop = context[:, -self.block_size:]
+            
+
+            logits, _ = self(context_crop, None)
+            logits = logits[:, -1, :]
+
+            probs = F.softmax(logits, dim=-1)
+
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            context = torch.cat([context, next_token], dim=1)
+
+        return context
+    
+torch.manual_seed(1337)
+
+m = BigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, 
+                        block_size=block_size, head_size=head_size).to(device)
+logits, loss = m(xb, yb)
+# print(logits.shape)
+# print(loss)
+auto_generate(m)
+
+# optimizer:
+optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate)
+
+print(eval_loss(m))
+
+
+for i in tqdm(range(max_iters)):
+    xs, ys = get_batch("train", batch_size=batch_size)
+
+    logits, loss = m(xs, ys)
+    optimizer.zero_grad(set_to_none=True)
+
+    loss.backward()
+
+    optimizer.step()
+print(eval_loss(m))
+
 
         
 # %%
