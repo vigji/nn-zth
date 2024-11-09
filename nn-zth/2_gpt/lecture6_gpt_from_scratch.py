@@ -264,7 +264,9 @@ class Head(nn.Module):
         self.value = nn.Linear(n_embd, head_size, bias=False)
 
         # tril is not really a parameter of the mode:
-        self.register_buffer("tril", torch.tril(torch.ones((block_size, block_size), dtype=bool)))
+        self.register_buffer(
+            "tril", torch.tril(torch.ones((block_size, block_size), dtype=bool))
+        )
 
     def forward(self, x):
         B, T, C = x.shape
@@ -278,8 +280,8 @@ class Head(nn.Module):
         # can look at all other tokens.
         weight = weight.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
         weight = torch.softmax(weight, dim=-1)
-        out = weight @ v 
-        return  out  # this will broacast the batch dimension B
+        out = weight @ v
+        return out  # this will broacast the batch dimension B
 
 
 class BigramLanguageModel(nn.Module):
@@ -311,8 +313,7 @@ class BigramLanguageModel(nn.Module):
     @torch.no_grad
     def generate(self, context, max_n_tokens):
         for i in range(max_n_tokens):
-            context_crop = context[:, -self.block_size:]
-            
+            context_crop = context[:, -self.block_size :]
 
             logits, _ = self(context_crop, None)
             logits = logits[:, -1, :]
@@ -324,7 +325,7 @@ class BigramLanguageModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
-    
+
 
 def auto_generate(model, points=100):
     starting_point = torch.zeros((1, 8), dtype=torch.long).to(device)
@@ -345,8 +346,9 @@ head_size = 16
 
 torch.manual_seed(1337)
 
-m = BigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, 
-                        block_size=block_size, head_size=head_size).to(device)
+m = BigramLanguageModel(
+    vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size
+).to(device)
 logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
@@ -373,14 +375,17 @@ print(eval_loss(m))
 # What about multiple heads? We just get a bunch of heads to process things in parallel
 # and concatenate their output:
 
+
 class MultipleHead(nn.Module):
     def __init__(self, num_heads, head_size) -> None:
         super().__init__()
-        self.multi_heads = nn.ModuleList([Head(head_size=head_size) for _ in range(num_heads)])
+        self.multi_heads = nn.ModuleList(
+            [Head(head_size=head_size) for _ in range(num_heads)]
+        )
 
     def forward(self, x):
         return torch.cat([head(x) for head in self.multi_heads], dim=-1)
-    
+
 
 class MultiheadBigramLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embs, block_size=8, head_size=16):
@@ -411,8 +416,7 @@ class MultiheadBigramLanguageModel(nn.Module):
     @torch.no_grad
     def generate(self, context, max_n_tokens):
         for i in range(max_n_tokens):
-            context_crop = context[:, -self.block_size:]
-            
+            context_crop = context[:, -self.block_size :]
 
             logits, _ = self(context_crop, None)
             logits = logits[:, -1, :]
@@ -424,11 +428,13 @@ class MultiheadBigramLanguageModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
-    
+
+
 torch.manual_seed(1337)
 
-m = MultiheadBigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, 
-                        block_size=block_size, head_size=head_size).to(device)
+m = MultiheadBigramLanguageModel(
+    vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size
+).to(device)
 logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
@@ -452,9 +458,9 @@ for i in tqdm(range(max_iters)):
 print(eval_loss(m))
 
 
-        
 # %%
 # Add a feedforward layer, so that the network can think about the results of the head:
+
 
 class FeedForward(nn.Module):
     def __init__(self, fan_in, fan_out) -> None:
@@ -466,7 +472,8 @@ class FeedForward(nn.Module):
         out = self.relu(self.linear(x))
 
         return out
-    
+
+
 class FFMultiheadBigramLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embs, block_size=8, head_size=16):
         super().__init__()
@@ -499,8 +506,7 @@ class FFMultiheadBigramLanguageModel(nn.Module):
     @torch.no_grad
     def generate(self, context, max_n_tokens):
         for i in range(max_n_tokens):
-            context_crop = context[:, -self.block_size:]
-            
+            context_crop = context[:, -self.block_size :]
 
             logits, _ = self(context_crop, None)
             logits = logits[:, -1, :]
@@ -512,11 +518,13 @@ class FFMultiheadBigramLanguageModel(nn.Module):
             context = torch.cat([context, next_token], dim=1)
 
         return context
-    
+
+
 torch.manual_seed(1337)
 
-m = FFMultiheadBigramLanguageModel(vocab_size=vocab_size, n_embs=n_embd, 
-                        block_size=block_size, head_size=head_size).to(device)
+m = FFMultiheadBigramLanguageModel(
+    vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size
+).to(device)
 logits, loss = m(xb, yb)
 # print(logits.shape)
 # print(loss)
@@ -540,6 +548,7 @@ for i in tqdm(range(max_iters)):
 print(eval_loss(m))
 # %%
 
+
 class Block(nn.Module):
     def __init__(self, n_embds, n_heads):
         super().__init__()
@@ -548,7 +557,7 @@ class Block(nn.Module):
         self.ff = FeedForward(n_embds, n_embds)
 
     def forward(self, x):
-        x = self.multihead(x)
-        out = self.ff(x)
+        x = x + self.multihead(x)
+        x = x + self.ff(x)
 
-        return out
+        return x
