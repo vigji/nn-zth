@@ -787,14 +787,14 @@ print(eval_loss(m))
 
 
 class FeedForwardDropout(nn.Module):
-    def __init__(self, n_embds, scaleup=4) -> None:
+    def __init__(self, n_embds, dropout, scaleup=4) -> None:
         super().__init__()
         # to follow paper implementation, factor 4 expansion:
         self.net = nn.Sequential(
             nn.Linear(n_embds, scaleup * n_embds),
             nn.ReLU(),
             nn.Linear(scaleup * n_embds, n_embds),
-            nn.Dropout(),
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -802,12 +802,12 @@ class FeedForwardDropout(nn.Module):
 
 
 class Headdropout(nn.Module):
-    def __init__(self, head_size):
+    def __init__(self, head_size, dropout):
         super().__init__()
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
-        self.dropout = nn.Dropout()
+        self.dropout = nn.Dropout(dropout)
         # tril is not really a parameter of the mode:
         self.register_buffer(
             "tril", torch.tril(torch.ones((block_size, block_size), dtype=bool))
@@ -833,13 +833,16 @@ class Headdropout(nn.Module):
 
 
 class MultipleHeadResDropout(nn.Module):
-    def __init__(self, num_heads, head_size) -> None:
+    def __init__(self, num_heads, head_size, dropout) -> None:
         super().__init__()
         self.multi_heads = nn.ModuleList(
-            [Headdropout(head_size=head_size) for _ in range(num_heads)]
+            [
+                Headdropout(head_size=head_size, dropout=dropout)
+                for _ in range(num_heads)
+            ]
         )
         self.proj = nn.Linear(head_size * num_heads, head_size * num_heads)
-        self.dropout = nn.Dropout()
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = torch.cat([head(x) for head in self.multi_heads], dim=-1)
@@ -852,8 +855,8 @@ class NormBlockDropout(nn.Module):
     def __init__(self, n_embds, n_heads):
         super().__init__()
         head_size = n_embds // n_heads
-        self.multihead = MultipleHeadResDropout(n_heads, head_size)
-        self.ff = FeedForwardDropout(n_embds)
+        self.multihead = MultipleHeadResDropout(n_heads, head_size, dropout)
+        self.ff = FeedForwardDropout(n_embds, dropout)
         self.layernorm1 = nn.LayerNorm(n_embds)
         self.layernorm2 = nn.LayerNorm(n_embds)
 
