@@ -128,7 +128,7 @@ def auto_generate(model, points=100):
 # %%
 batch_size = 32
 # training loop:
-n_batches = 100000
+n_batches = 5000
 lr = 1e-3
 
 
@@ -548,16 +548,121 @@ for i in tqdm(range(max_iters)):
 print(eval_loss(m))
 # %%
 
+# We also add a linear layer to the head:
+class MultipleHeadRes(nn.Module):
+    def __init__(self, num_heads, head_size) -> None:
+        super().__init__()
+        self.multi_heads = nn.ModuleList(
+            [Head(head_size=head_size) for _ in range(num_heads)]
+        )
+        self.proj = nn.Linear(head_size*num_heads, head_size*num_heads)
 
+    def forward(self, x):
+        out = torch.cat([head(x) for head in self.multi_heads], dim=-1)
+        out = self.proj(out)
+
+        return out
+
+
+# and to the feedforward:
+class FeedForwardMod(nn.Module):
+    def __init__(self, n_embds) -> None:
+        super().__init__()
+        # to follow paper implementation, factor 4 expansion:
+        self.net = nn.Sequential(nn.Linear(n_embds, 4 * n_embds),
+                                 nn.ReLU(),
+                                 nn.Linear(4 * n_embds, n_embds),)
+
+    def forward(self, x):
+        out = self.net(x)
+
+        return out
 class Block(nn.Module):
     def __init__(self, n_embds, n_heads):
         super().__init__()
         head_size = n_embds // n_heads
-        self.multihead = MultipleHead(n_heads, head_size)
-        self.ff = FeedForward(n_embds, n_embds)
+        self.multihead = MultipleHeadRes(n_heads, head_size)
+        self.ff = FeedForwardMod(n_embds)
 
     def forward(self, x):
         x = x + self.multihead(x)
         x = x + self.ff(x)
 
         return x
+
+# let's see the results!
+
+
+class FFMultiheadResidualBigramLanguageModel(nn.Module):
+    def __init__(self, vocab_size, n_embs, block_size=8, head_size=16):
+        super().__init__()
+        self.block_size = block_size
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embs)
+        self.positional_embedding_table = nn.Embedding(block_size, n_embs)
+        self.sa_head = MultipleHead(4, n_embs // 4)
+        self.feedforward = FeedForward(n_embs, n_embs)
+        self.lm_head = nn.Linear(n_embs, vocab_size)
+
+    def forward(self, context, target=None):
+        B, T = context.shape
+        embs = self.token_embedding_table(context)
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))
+        x = embs + pos_embs
+        x = self.sa_head(x)
+        # x = self.lm_head(x)
+        x = self.feedforward(x)
+        logits = self.lm_head(x)
+
+        if target is None:
+            loss = None
+        else:
+            target = einops.rearrange(target, "b t -> (b t)")
+            logits = einops.rearrange(logits, "b t c -> (b t) c")
+            loss = F.cross_entropy(logits, target)
+
+        return logits, loss
+
+    @torch.no_grad
+    def generate(self, context, max_n_tokens):
+        for i in range(max_n_tokens):
+            context_crop = context[:, -self.block_size :]
+
+            logits, _ = self(context_crop, None)
+            logits = logits[:, -1, :]
+
+            probs = F.softmax(logits, dim=-1)
+
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            context = torch.cat([context, next_token], dim=1)
+
+        return context
+
+
+torch.manual_seed(1337)
+
+m = FFMultiheadBigramLanguageModel(
+    vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size
+).to(device)
+logits, loss = m(xb, yb)
+# print(logits.shape)
+# print(loss)
+auto_generate(m)
+
+# optimizer:
+optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate)
+
+print(eval_loss(m))
+
+
+for i in tqdm(range(max_iters)):
+    xs, ys = get_batch("train", batch_size=batch_size)
+
+    logits, loss = m(xs, ys)
+    optimizer.zero_grad(set_to_none=True)
+
+    loss.backward()
+
+    optimizer.step()
+print(eval_loss(m))
+# %%
