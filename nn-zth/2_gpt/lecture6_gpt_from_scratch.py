@@ -575,8 +575,9 @@ class FeedForwardMod(nn.Module):
 
     def forward(self, x):
         out = self.net(x)
-
         return out
+    
+
 class Block(nn.Module):
     def __init__(self, n_embds, n_heads):
         super().__init__()
@@ -775,4 +776,168 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 # %%
-# Now, to scale up the model, we will add dropout to our layers
+# Now, to scale up the model, we will add dropout to our layers:
+
+class FeedForwardDropout(nn.Module):
+    def __init__(self, n_embds, scaleup=4) -> None:
+        super().__init__()
+        # to follow paper implementation, factor 4 expansion:
+        self.net = nn.Sequential(nn.Linear(n_embds, scaleup * n_embds),
+                                 nn.ReLU(),
+                                 nn.Linear(scaleup * n_embds, n_embds),
+                                 nn.Dropout())
+
+    def forward(self, x):
+        return self.net(x)
+
+class Headdropout(nn.Module):
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.dropout = nn.Dropout()
+        # tril is not really a parameter of the mode:
+        self.register_buffer(
+            "tril", torch.tril(torch.ones((block_size, block_size), dtype=bool))
+        )
+
+    def forward(self, x):
+        B, T, C = x.shape
+        q = self.query(x)  # broadcasting what i look for
+        k = self.key(x)  # broadcasting what i have
+        v = self.value(x)  # actual passed values
+        # to avoid passing too peaky distributions inside softmax, we first normalize here:
+        weight = q @ einops.rearrange(k, "b t c -> b c t") * C**-0.5
+
+        # trianular masking happens in a decoder head, encoder heads do not have it and all tokens
+        # can look at all other tokens.
+        weight = weight.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
+        weight = torch.softmax(weight, dim=-1)
+
+        self.dropout(weight)
+
+        out = weight @ v
+        return out  # this will broacast the batch dimension B
+
+
+class MultipleHeadResDropout(nn.Module):
+    def __init__(self, num_heads, head_size) -> None:
+        super().__init__()
+        self.multi_heads = nn.ModuleList(
+            [Headdropout(head_size=head_size) for _ in range(num_heads)]
+        )
+        self.proj = nn.Linear(head_size*num_heads, head_size*num_heads)
+        self.dropout = nn.Dropout()
+
+    def forward(self, x):
+        out = torch.cat([head(x) for head in self.multi_heads], dim=-1)
+        out = self.dropout(self.proj(out))
+
+        return out
+    
+
+class NormBlockDropout(nn.Module):
+    def __init__(self, n_embds, n_heads):
+        super().__init__()
+        head_size = n_embds // n_heads
+        self.multihead = MultipleHeadResDropout(n_heads, head_size)
+        self.ff = FeedForwardDropout(n_embds)
+        self.layernorm1 = nn.LayerNorm(n_embds)
+        self.layernorm2 = nn.LayerNorm(n_embds)
+
+    def forward(self, x):
+        x = x + self.multihead(self.layernorm1(x))
+        x = x + self.ff(self.layernorm2(x))
+
+        return x
+    
+
+# %% Run with new hyperparameters:
+batch_size = 64
+block_size = 256
+max_iters = 5000
+eval_interval = 500
+learning_rate = 3e-4
+eval_iters = 200
+n_embd = 384
+n_heads = 6
+n_trasflayers = 6
+dropout = 0.2
+
+torch.manual_seed(1337)
+
+
+class FFMultiheadResidualNormDropoutLanguageModel(nn.Module):
+    def __init__(self, vocab_size, n_embds, block_size=8, n_trasflayers=6, n_heads=n_heads):
+        super().__init__()
+        self.block_size = block_size
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embds)
+        self.positional_embedding_table = nn.Embedding(block_size, n_embds)
+        blocks = [NormBlockDropout(n_embds=n_embds, n_heads=n_heads) for _ in range(n_trasflayers)]
+        blocks.append(nn.LayerNorm(n_embds))
+        self.blocks = nn.Sequential(*blocks)
+
+        self.lm_head = nn.Linear(n_embds, vocab_size)
+
+    def forward(self, context, target=None):
+        B, T = context.shape
+        embs = self.token_embedding_table(context)
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))
+        x = embs + pos_embs
+        x = self.blocks(x)
+        logits = self.lm_head(x)
+
+        if target is None:
+            loss = None
+        else:
+            target = einops.rearrange(target, "b t -> (b t)")
+            logits = einops.rearrange(logits, "b t c -> (b t) c")
+            loss = F.cross_entropy(logits, target)
+
+        return logits, loss
+
+    @torch.no_grad
+    def generate(self, context, max_n_tokens):
+        for i in range(max_n_tokens):
+            context_crop = context[:, -self.block_size :]
+
+            logits, _ = self(context_crop, None)
+            logits = logits[:, -1, :]
+
+            probs = F.softmax(logits, dim=-1)
+
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            context = torch.cat([context, next_token], dim=1)
+
+        return context
+
+
+torch.manual_seed(1337)
+
+m = FFMultiheadResidualNormDropoutLanguageModel(
+    vocab_size=vocab_size, n_embds=n_embd, block_size=block_size, n_heads=n_heads, n_trasflayers=n_trasflayers,
+).to(device)
+logits, loss = m(xb, yb)
+# print(logits.shape)
+# print(loss)
+auto_generate(m)
+
+# optimizer:
+optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate)
+
+print(eval_loss(m))
+
+
+for i in tqdm(range(max_iters)):
+    xs, ys = get_batch("train", batch_size=batch_size)
+
+    logits, loss = m(xs, ys)
+    optimizer.zero_grad(set_to_none=True)
+
+    loss.backward()
+
+    optimizer.step()
+print(eval_loss(m))
+# %%
