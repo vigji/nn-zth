@@ -641,7 +641,7 @@ class FFMultiheadResidualBigramLanguageModel(nn.Module):
 
 torch.manual_seed(1337)
 
-m = FFMultiheadBigramLanguageModel(
+m = FFMultiheadResidualBigramLanguageModel(
     vocab_size=vocab_size, n_embs=n_embd, block_size=block_size, head_size=head_size
 ).to(device)
 logits, loss = m(xb, yb)
@@ -666,3 +666,113 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 # %%
+
+# Very similar to batchnorm, but now normalizing for each sample across the layer
+class LayerNorm1:
+    def __init__(self, dim, gamma_coef=1) -> None:
+        self.gamma = torch.ones((1, dim)) * gamma_coef
+        self.beta = torch.zeros((1, dim))
+
+    def parameters(self):
+        return [self.gamma, self.beta]
+
+    def __call__(self, X: torch.Any) -> torch.Any:
+        mean = X.mean(dim=1, keepdim=True)
+        std = X.std(dim=1, keepdim=True)
+
+        # just for tracking purposes:
+        self.out = self.gamma * (X - mean) / std + self.beta
+        return self.out
+
+
+# Transformer block
+class NormBlock(nn.Module):
+    def __init__(self, n_embds, n_heads):
+        super().__init__()
+        head_size = n_embds // n_heads
+        self.multihead = MultipleHeadRes(n_heads, head_size)
+        self.ff = FeedForwardMod(n_embds)
+        self.layernorm1 = nn.LayerNorm(n_embds)
+        self.layernorm2 = nn.LayerNorm(n_embds)
+
+    def forward(self, x):
+        x = x + self.multihead(self.layernorm1(x))
+        x = x + self.ff(self.layernorm2(x))
+
+        return x
+    
+class FFMultiheadResidualNormLanguageModel(nn.Module):
+    def __init__(self, vocab_size, n_embds, block_size=8, head_size=16):
+        super().__init__()
+        self.block_size = block_size
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embds)
+        self.positional_embedding_table = nn.Embedding(block_size, n_embds)
+        self.blocks = nn.Sequential(NormBlock(n_embds=n_embds, n_heads=4),
+                                    NormBlock(n_embds=n_embds, n_heads=4),
+                                    NormBlock(n_embds=n_embds, n_heads=4),
+                                    nn.LayerNorm(n_embds)
+                                    )
+        self.lm_head = nn.Linear(n_embds, vocab_size)
+
+    def forward(self, context, target=None):
+        B, T = context.shape
+        embs = self.token_embedding_table(context)
+        pos_embs = self.positional_embedding_table(torch.arange(T, device=device))
+        x = embs + pos_embs
+        x = self.blocks(x)
+        logits = self.lm_head(x)
+
+        if target is None:
+            loss = None
+        else:
+            target = einops.rearrange(target, "b t -> (b t)")
+            logits = einops.rearrange(logits, "b t c -> (b t) c")
+            loss = F.cross_entropy(logits, target)
+
+        return logits, loss
+
+    @torch.no_grad
+    def generate(self, context, max_n_tokens):
+        for i in range(max_n_tokens):
+            context_crop = context[:, -self.block_size :]
+
+            logits, _ = self(context_crop, None)
+            logits = logits[:, -1, :]
+
+            probs = F.softmax(logits, dim=-1)
+
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            context = torch.cat([context, next_token], dim=1)
+
+        return context
+
+
+torch.manual_seed(1337)
+
+m = FFMultiheadResidualNormLanguageModel(
+    vocab_size=vocab_size, n_embds=n_embd, block_size=block_size, head_size=head_size
+).to(device)
+logits, loss = m(xb, yb)
+# print(logits.shape)
+# print(loss)
+auto_generate(m)
+
+# optimizer:
+optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate)
+
+print(eval_loss(m))
+
+
+for i in tqdm(range(max_iters)):
+    xs, ys = get_batch("train", batch_size=batch_size)
+
+    logits, loss = m(xs, ys)
+    optimizer.zero_grad(set_to_none=True)
+
+    loss.backward()
+
+    optimizer.step()
+print(eval_loss(m))
+# %%
+# Now, to scale up the model, we will add dropout to our layers
