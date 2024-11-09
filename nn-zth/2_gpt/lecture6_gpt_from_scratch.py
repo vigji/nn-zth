@@ -548,6 +548,7 @@ for i in tqdm(range(max_iters)):
 print(eval_loss(m))
 # %%
 
+
 # We also add a linear layer to the head:
 class MultipleHeadRes(nn.Module):
     def __init__(self, num_heads, head_size) -> None:
@@ -555,7 +556,7 @@ class MultipleHeadRes(nn.Module):
         self.multi_heads = nn.ModuleList(
             [Head(head_size=head_size) for _ in range(num_heads)]
         )
-        self.proj = nn.Linear(head_size*num_heads, head_size*num_heads)
+        self.proj = nn.Linear(head_size * num_heads, head_size * num_heads)
 
     def forward(self, x):
         out = torch.cat([head(x) for head in self.multi_heads], dim=-1)
@@ -569,14 +570,16 @@ class FeedForwardMod(nn.Module):
     def __init__(self, n_embds) -> None:
         super().__init__()
         # to follow paper implementation, factor 4 expansion:
-        self.net = nn.Sequential(nn.Linear(n_embds, 4 * n_embds),
-                                 nn.ReLU(),
-                                 nn.Linear(4 * n_embds, n_embds),)
+        self.net = nn.Sequential(
+            nn.Linear(n_embds, 4 * n_embds),
+            nn.ReLU(),
+            nn.Linear(4 * n_embds, n_embds),
+        )
 
     def forward(self, x):
         out = self.net(x)
         return out
-    
+
 
 class Block(nn.Module):
     def __init__(self, n_embds, n_heads):
@@ -590,6 +593,7 @@ class Block(nn.Module):
         x = x + self.ff(x)
 
         return x
+
 
 # let's see the results!
 
@@ -668,6 +672,7 @@ for i in tqdm(range(max_iters)):
 print(eval_loss(m))
 # %%
 
+
 # Very similar to batchnorm, but now normalizing for each sample across the layer
 class LayerNorm1:
     def __init__(self, dim, gamma_coef=1) -> None:
@@ -701,18 +706,20 @@ class NormBlock(nn.Module):
         x = x + self.ff(self.layernorm2(x))
 
         return x
-    
+
+
 class FFMultiheadResidualNormLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embds, block_size=8, head_size=16):
         super().__init__()
         self.block_size = block_size
         self.token_embedding_table = nn.Embedding(vocab_size, n_embds)
         self.positional_embedding_table = nn.Embedding(block_size, n_embds)
-        self.blocks = nn.Sequential(NormBlock(n_embds=n_embds, n_heads=4),
-                                    NormBlock(n_embds=n_embds, n_heads=4),
-                                    NormBlock(n_embds=n_embds, n_heads=4),
-                                    nn.LayerNorm(n_embds)
-                                    )
+        self.blocks = nn.Sequential(
+            NormBlock(n_embds=n_embds, n_heads=4),
+            NormBlock(n_embds=n_embds, n_heads=4),
+            NormBlock(n_embds=n_embds, n_heads=4),
+            nn.LayerNorm(n_embds),
+        )
         self.lm_head = nn.Linear(n_embds, vocab_size)
 
     def forward(self, context, target=None):
@@ -778,17 +785,21 @@ print(eval_loss(m))
 # %%
 # Now, to scale up the model, we will add dropout to our layers:
 
+
 class FeedForwardDropout(nn.Module):
     def __init__(self, n_embds, scaleup=4) -> None:
         super().__init__()
         # to follow paper implementation, factor 4 expansion:
-        self.net = nn.Sequential(nn.Linear(n_embds, scaleup * n_embds),
-                                 nn.ReLU(),
-                                 nn.Linear(scaleup * n_embds, n_embds),
-                                 nn.Dropout())
+        self.net = nn.Sequential(
+            nn.Linear(n_embds, scaleup * n_embds),
+            nn.ReLU(),
+            nn.Linear(scaleup * n_embds, n_embds),
+            nn.Dropout(),
+        )
 
     def forward(self, x):
         return self.net(x)
+
 
 class Headdropout(nn.Module):
     def __init__(self, head_size):
@@ -827,7 +838,7 @@ class MultipleHeadResDropout(nn.Module):
         self.multi_heads = nn.ModuleList(
             [Headdropout(head_size=head_size) for _ in range(num_heads)]
         )
-        self.proj = nn.Linear(head_size*num_heads, head_size*num_heads)
+        self.proj = nn.Linear(head_size * num_heads, head_size * num_heads)
         self.dropout = nn.Dropout()
 
     def forward(self, x):
@@ -835,7 +846,7 @@ class MultipleHeadResDropout(nn.Module):
         out = self.dropout(self.proj(out))
 
         return out
-    
+
 
 class NormBlockDropout(nn.Module):
     def __init__(self, n_embds, n_heads):
@@ -851,7 +862,7 @@ class NormBlockDropout(nn.Module):
         x = x + self.ff(self.layernorm2(x))
 
         return x
-    
+
 
 # %% Run with new hyperparameters:
 batch_size = 64
@@ -869,12 +880,17 @@ torch.manual_seed(1337)
 
 
 class FFMultiheadResidualNormDropoutLanguageModel(nn.Module):
-    def __init__(self, vocab_size, n_embds, block_size=8, n_trasflayers=6, n_heads=n_heads):
+    def __init__(
+        self, vocab_size, n_embds, block_size=8, n_trasflayers=6, n_heads=n_heads
+    ):
         super().__init__()
         self.block_size = block_size
         self.token_embedding_table = nn.Embedding(vocab_size, n_embds)
         self.positional_embedding_table = nn.Embedding(block_size, n_embds)
-        blocks = [NormBlockDropout(n_embds=n_embds, n_heads=n_heads) for _ in range(n_trasflayers)]
+        blocks = [
+            NormBlockDropout(n_embds=n_embds, n_heads=n_heads)
+            for _ in range(n_trasflayers)
+        ]
         blocks.append(nn.LayerNorm(n_embds))
         self.blocks = nn.Sequential(*blocks)
 
@@ -917,7 +933,11 @@ class FFMultiheadResidualNormDropoutLanguageModel(nn.Module):
 torch.manual_seed(1337)
 
 m = FFMultiheadResidualNormDropoutLanguageModel(
-    vocab_size=vocab_size, n_embds=n_embd, block_size=block_size, n_heads=n_heads, n_trasflayers=n_trasflayers,
+    vocab_size=vocab_size,
+    n_embds=n_embd,
+    block_size=block_size,
+    n_heads=n_heads,
+    n_trasflayers=n_trasflayers,
 ).to(device)
 logits, loss = m(xb, yb)
 # print(logits.shape)
