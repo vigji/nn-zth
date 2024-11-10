@@ -964,3 +964,5 @@ for i in tqdm(range(max_iters)):
     optimizer.step()
 print(eval_loss(m))
 # %%
+auto_generate(m)
+# %%
