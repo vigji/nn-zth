@@ -472,15 +472,29 @@ class VAE(nn.Module):
 
     def sample_latent_vector(self, x: t.Tensor) -> t.Tensor:
         latent_activation = self.encoder(x)
-        mean = latent_activation[-1, :self.latent_dim_size]
-        std = latent_activation[-1, self.latent_dim_size:]
-
-        z = mean + std * torch.randn(latent_activation.shape)
-        return z
+        print(latent_activation.shape)
+        mean = latent_activation[:, :self.latent_dim_size]
+        std = latent_activation[:, self.latent_dim_size:]
+        print(mean.shape)
+        z = mean + std * torch.randn_like(std)
+        return z, mean, std
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         # Your code here
-        latent = self.sample_latent_vector(x)
+        latent, mean, std = self.sample_latent_vector(x)
         decoded = self.decoder(latent)
-        
-        return decoded
+
+        return decoded, mean, std
+    
+
+model = VAE(latent_dim_size=5, hidden_dim_size=100)
+
+trainset_mnist = get_dataset("MNIST")
+x = next(iter(DataLoader(trainset_mnist, batch_size=8)))[0]
+# print(torchinfo.summary(model, input_data=x))
+# print(x.shape)
+latent, _, _ = model.sample_latent_vector(x)
+dec = model.decoder(latent)
+# latent.shape
+torchinfo.summary(model, input_data=x)
+# %%
