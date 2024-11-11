@@ -266,14 +266,38 @@ class AutoencoderArgs():
 
 
 args = AutoencoderArgs()
-# example:
-training_dataset = get_dataset(args.dataset, train=True)
 
-dataset_loader = DataLoader(
-    training_dataset, batch_size=args.batch_size, shuffle=True
-)
+class AutoencoderTrainer():
+    def __init__(self, args):
+        self.args = args
+        self.training_dataset = get_dataset(args.dataset, train=True)
 
-model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
-                    latent_dim_size=args.latent_dim_size).to(device)
-self.optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=args.betas)
+        self.dataset_loader = DataLoader(
+            self.training_dataset, batch_size=args.batch_size, shuffle=True
+        )
+
+        self.model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
+                            latent_dim_size=args.latent_dim_size).to(device)
+
+        self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr, betas=args.betas)
+
+        self.loss_fun = nn.MSELoss()
+
+    def train_step(self, x):
+        pred = self.model(x)
+        loss = self.loss_fun(x, pred)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def train(self):
+        step = 0
+
+        for epoch in self.args.nepochs:
+            for batch_x, _ in self.dataset_loader:
+                self.train_step(batch_x)
+
+
+
 # %%
