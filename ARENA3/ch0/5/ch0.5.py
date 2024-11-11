@@ -1,6 +1,8 @@
 # %%
 import os
+from pyexpat import model
 import sys
+from click import progressbar
 import einops.layers
 import torch as t
 from torch import nn, optim
@@ -196,8 +198,6 @@ class Autoencoder(nn.Module):
             nn.ReLU(),
             # Linear layer with latent_dim_size:
             nn.Linear(hidden_dim_size, latent_dim_size),
-            # ReLU?
-            nn.ReLU(),
         )
         # END OF ENCODER
         self.decoder = nn.Sequential(
@@ -232,7 +232,7 @@ class Autoencoder(nn.Module):
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         # Your code here
-        encoded = self.layers(x)
+        encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return decoded
 
@@ -244,7 +244,7 @@ my_Autoencoder = Autoencoder(latent_dim_size=5, hidden_dim_size=128)
 
 print_param_count(my_Autoencoder, soln_Autoencoder)
 #
-# %%
+
 # Let's start the actual training:
 @dataclass
 class AutoencoderArgs():
@@ -265,8 +265,6 @@ class AutoencoderArgs():
     wandb_name: Optional[str] = None
 
 
-args = AutoencoderArgs()
-
 class AutoencoderTrainer():
     def __init__(self, args):
         self.args = args
@@ -277,7 +275,7 @@ class AutoencoderTrainer():
         )
 
         self.model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
-                            latent_dim_size=args.latent_dim_size).to(device)
+                                 latent_dim_size=args.latent_dim_size) # .to(device)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr, betas=args.betas)
 
@@ -291,13 +289,35 @@ class AutoencoderTrainer():
         loss.backward()
         self.optimizer.step()
 
+        return loss
+    
+    @torch.no_grad
+    def evaluate(self):
+        preds = [self.model(x) for x in HOLDOUT_DATA]
+
+        display_data(preds, nrows=1, title="MNIST holdout data")
+            
     def train(self):
         step = 0
 
-        for epoch in self.args.nepochs:
-            for batch_x, _ in self.dataset_loader:
-                self.train_step(batch_x)
+        progress_bar = tqdm(self.dataset_loader, total=len(self.dataset_loader))
+        for epoch in range(self.args.epochs):
+            for (batch_x, label) in progress_bar:
+                loss = self.train_step(batch_x)
 
+                step += 1
+                progress_bar.set_description(f"ep {epoch}; loss={loss:.4f}, examples={step}")
+            self.evaluate()
 
+tqdm._instances.clear()
+args = AutoencoderArgs()
+trainer = AutoencoderTrainer(args)
+trainer.train()
 
+# %%
+tens = torch.randn([512, 1, 28, 28])
+# %%
+model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
+                    latent_dim_size=args.latent_dim_size)
+model.encoder(tens)
 # %%
