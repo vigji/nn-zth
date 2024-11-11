@@ -260,7 +260,7 @@ class AutoencoderArgs():
     betas: tuple[float, float] = (0.5, 0.999)
 
     # logging
-    use_wandb: bool = False
+    use_wandb: bool = True
     wandb_project: Optional[str] = 'day5-ae-mnist'
     wandb_name: Optional[str] = None
 
@@ -295,21 +295,35 @@ class AutoencoderTrainer():
     def evaluate(self):
         preds = self.model(HOLDOUT_DATA)
 
-        display_data(preds, nrows=1, title="MNIST holdout data")
+        if self.args.use_wandb:
+            wandb_images = [wandb.Image(preds[i, 0, :, :]) for i in range(preds.shape[0])]
+
+            wandb.log({"Images": wandb_images}, step=self.step)
+        else:
+            display_data(preds, nrows=1, title="MNIST holdout data")
             
     def train(self):
-        step = 0
+        if self.args.use_wandb:
+            wandb.init(project=args.wandb_project, name=args.wandb_name)
+            wandb.watch(self.model)
+    
+        self.step = 0
 
         progress_bar = tqdm(self.dataset_loader, total=len(self.dataset_loader))
         for epoch in range(self.args.epochs):
-            for (batch_x, label) in progress_bar:
+            for (batch_x, _) in progress_bar:
                 loss = self.train_step(batch_x.to(device))
 
-                step += 1
-                progress_bar.set_description(f"ep {epoch}; loss={loss:.4f}, examples={step}")
+                self.step += 1
+                progress_bar.set_description(f"ep {epoch}; loss={loss:.4f}, examples={self.step}")
+
+                if self.args.use_wandb:
+                    wandb.log(dict(loss=loss), step=self.step)
             self.evaluate()
 
-tqdm._instances.clear()
+        if self.args.use_wandb:
+            wandb.finish()
+
 args = AutoencoderArgs()
 trainer = AutoencoderTrainer(args)
 trainer.train()
@@ -319,7 +333,6 @@ tens = torch.randn([512, 1, 28, 28])
 # %%
 model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
                     latent_dim_size=args.latent_dim_size).to("mps")
-model.encoder(HOLDOUT_DATA)
-# %%
-HOLDOUT_DATA.shape
+pred = model(HOLDOUT_DATA)
+pred.shape
 # %%
