@@ -275,7 +275,7 @@ class AutoencoderTrainer():
         )
 
         self.model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
-                                 latent_dim_size=args.latent_dim_size) # .to(device)
+                                 latent_dim_size=args.latent_dim_size).to(device)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr, betas=args.betas)
 
@@ -293,7 +293,7 @@ class AutoencoderTrainer():
     
     @torch.no_grad
     def evaluate(self):
-        preds = [self.model(x) for x in HOLDOUT_DATA]
+        preds = self.model(HOLDOUT_DATA)
 
         display_data(preds, nrows=1, title="MNIST holdout data")
             
@@ -303,7 +303,7 @@ class AutoencoderTrainer():
         progress_bar = tqdm(self.dataset_loader, total=len(self.dataset_loader))
         for epoch in range(self.args.epochs):
             for (batch_x, label) in progress_bar:
-                loss = self.train_step(batch_x)
+                loss = self.train_step(batch_x.to(device))
 
                 step += 1
                 progress_bar.set_description(f"ep {epoch}; loss={loss:.4f}, examples={step}")
@@ -318,6 +318,8 @@ trainer.train()
 tens = torch.randn([512, 1, 28, 28])
 # %%
 model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
-                    latent_dim_size=args.latent_dim_size)
-model.encoder(tens)
+                    latent_dim_size=args.latent_dim_size).to("mps")
+model.encoder(HOLDOUT_DATA)
+# %%
+HOLDOUT_DATA.shape
 # %%
