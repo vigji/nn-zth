@@ -53,10 +53,13 @@ device = t.device(
 )
 
 section_dir = Path(__file__).parent
-celeb_data_dir = section_dir / "data/celeba"
+data_dir = section_dir / "data"
+data_dir.mkdir(exist_ok=True, parents=True)
+
+celeb_data_dir = data_dir / "celeba"
 celeb_image_dir = celeb_data_dir / "img_align_celeba"
+celeb_image_dir.mkdir(exist_ok=True, parents=True)
 # %%
-os.makedirs(celeb_image_dir, exist_ok=True)
 
 if len(list(celeb_image_dir.glob("*.jpg"))) > 0:
     print("Dataset already loaded.")
@@ -90,7 +93,7 @@ def get_dataset(dataset: Literal["MNIST", "CELEB"], train: bool = True) -> Datas
             ]
         )
         trainset = datasets.ImageFolder(
-            root=exercises_dir / "part5_gans_and_vaes/data/celeba", transform=transform
+            root=celeb_data_dir, transform=transform,
         )
 
     elif dataset == "MNIST":
@@ -103,9 +106,10 @@ def get_dataset(dataset: Literal["MNIST", "CELEB"], train: bool = True) -> Datas
             ]
         )
         trainset = datasets.MNIST(
-            root=exercises_dir / "part5_gans_and_vaes/data",
+            root=data_dir,
             transform=transform,
             download=True,
+            train=train,
         )
 
     return trainset
@@ -239,4 +243,37 @@ soln_Autoencoder = solutions.Autoencoder(latent_dim_size=5, hidden_dim_size=128)
 my_Autoencoder = Autoencoder(latent_dim_size=5, hidden_dim_size=128)
 
 print_param_count(my_Autoencoder, soln_Autoencoder)
+#
+# %%
+# Let's start the actual training:
+@dataclass
+class AutoencoderArgs():
+    # architecture
+    latent_dim_size: int = 5
+    hidden_dim_size: int = 128
+
+    # data / training
+    dataset: Literal["MNIST", "CELEB"] = "MNIST"
+    batch_size: int = 512
+    epochs: int = 10
+    lr: float = 1e-3
+    betas: tuple[float, float] = (0.5, 0.999)
+
+    # logging
+    use_wandb: bool = False
+    wandb_project: Optional[str] = 'day5-ae-mnist'
+    wandb_name: Optional[str] = None
+
+
+args = AutoencoderArgs()
+# example:
+training_dataset = get_dataset(args.dataset, train=True)
+
+dataset_loader = DataLoader(
+    training_dataset, batch_size=args.batch_size, shuffle=True
+)
+
+model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
+                    latent_dim_size=args.latent_dim_size).to(device)
+self.optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=args.betas)
 # %%
