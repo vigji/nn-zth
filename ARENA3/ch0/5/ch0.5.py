@@ -260,7 +260,7 @@ class AutoencoderArgs():
     betas: tuple[float, float] = (0.5, 0.999)
 
     # logging
-    use_wandb: bool = True
+    use_wandb: bool = False
     wandb_project: Optional[str] = 'day5-ae-mnist'
     wandb_name: Optional[str] = None
 
@@ -291,7 +291,7 @@ class AutoencoderTrainer():
 
         return loss
     
-    @torch.no_grad
+    @torch.inference_mode()
     def evaluate(self):
         preds = self.model(HOLDOUT_DATA)
 
@@ -333,6 +333,28 @@ tens = torch.randn([512, 1, 28, 28])
 # %%
 model = Autoencoder(hidden_dim_size=args.hidden_dim_size, 
                     latent_dim_size=args.latent_dim_size).to("mps")
-pred = model(HOLDOUT_DATA)
+pred = model.encoder(HOLDOUT_DATA)
 pred.shape
+# %%
+# Let's try to visualize the effects of latent dimensions
+
+@torch.inference_mode()
+def visualize_embeddings(model, n_pts=11, range_span=3):
+    # we will visualize the first two dims:
+    grid_latent = torch.zeros((n_pts**2, model.latent_dim_size)).to(device)
+
+    xspan = torch.linspace(-range_span, range_span, n_pts)
+    
+    grid_latent[:, 0] = einops.repeat(xspan, "dim1 -> (dim1 dim2)", dim2=n_pts)
+    grid_latent[:, 1] = einops.repeat(xspan, "dim1 -> (dim2 dim1)", dim2=n_pts)
+
+    output = model.decoder(grid_latent)
+    reshaped_to_plot = einops.rearrange(output, "(d1 d2) 1 h w -> (d1 h) (d2 w)", d1=n_pts, d2=n_pts)
+
+    px.imshow(reshaped_to_plot.to("cpu")).show()
+
+    return grid_latent
+
+grid_latent = visualize_embeddings(trainer.model)
+
 # %%
