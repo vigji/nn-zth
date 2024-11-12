@@ -472,29 +472,107 @@ class VAE(nn.Module):
 
     def sample_latent_vector(self, x: t.Tensor) -> t.Tensor:
         latent_activation = self.encoder(x)
-        print(latent_activation.shape)
         mean = latent_activation[:, :self.latent_dim_size]
-        std = latent_activation[:, self.latent_dim_size:]
-        print(mean.shape)
-        z = mean + std * torch.randn_like(std)
-        return z, mean, std
+        logsigma = latent_activation[:, self.latent_dim_size:]
+        sigma = torch.exp(logsigma)
+        z = mean + sigma * torch.randn_like(sigma)
+        return z, mean, logsigma
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         # Your code here
-        latent, mean, std = self.sample_latent_vector(x)
+        latent, mean, logsigma = self.sample_latent_vector(x)
         decoded = self.decoder(latent)
 
-        return decoded, mean, std
+        return decoded, mean, logsigma
     
 
-model = VAE(latent_dim_size=5, hidden_dim_size=100)
+args = VAEArgs(latent_dim_size=10, hidden_dim_size=100, use_wandb=False)
+model = VAE(latent_dim_size=args.latent_dim_size, 
+            hidden_dim_size=args.hidden_dim_size)
 
 trainset_mnist = get_dataset("MNIST")
-x = next(iter(DataLoader(trainset_mnist, batch_size=8)))[0]
+x = next(iter(DataLoader(trainset_mnist, batch_size=512)))[0]
 # print(torchinfo.summary(model, input_data=x))
 # print(x.shape)
 latent, _, _ = model.sample_latent_vector(x)
 dec = model.decoder(latent)
 # latent.shape
 torchinfo.summary(model, input_data=x)
+# %%
+
+@dataclass
+class VAEArgs(AutoencoderArgs):
+    wandb_project: Optional[str] = 'day5-vae-mnist'
+    beta_kl: float = 0.1
+
+
+class VAETrainer:
+    def __init__(self, args: VAEArgs):
+        self.args = args
+        self.trainset = get_dataset(args.dataset)
+        self.trainloader = DataLoader(self.trainset, batch_size=args.batch_size, shuffle=True)
+        self.model = VAE(
+            latent_dim_size = args.latent_dim_size,
+            hidden_dim_size = args.hidden_dim_size,
+        ).to(device)
+        self.optimizer = t.optim.Adam(self.model.parameters(), lr=args.lr, betas=args.betas)
+        self.loss_fun = nn.MSELoss()
+
+    def training_step(self, img: t.Tensor, label: t.Tensor):
+        """
+        Performs a training step on the batch of images in `img`. Returns the loss.
+        """
+        img_pred, mean, logsigma = self.model(img)
+        sigma = torch.exp(logsigma)
+        # print(img_pred.shape, img.shape)
+        loss = self.loss_fun(img, img_pred) + (((sigma**2 + mean**2 - 1) / 2 - logsigma)).mean() * self.args.beta_kl
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        return loss, mean, sigma
+        
+    @torch.inference_mode()
+    def evaluate(self):
+        preds, _, _ = self.model(HOLDOUT_DATA)
+
+        if self.args.use_wandb:
+            wandb_images = [wandb.Image(preds[i, 0, :, :]) for i in range(preds.shape[0])]
+
+            wandb.log({"Images": wandb_images}, step=self.step)
+        else:
+            display_data(preds, nrows=1, title="MNIST holdout data")
+        
+        
+
+    def train(self) -> None:
+        """
+        Performs a full training run, optionally logging to wandb.
+        """
+        self.step = 0
+        if self.args.use_wandb:
+            wandb.init(project=self.args.wandb_project, name=self.args.wandb_name)
+
+        for epoch in range(self.args.epochs):
+            progress_bar = tqdm(self.trainloader, total=int(len(self.trainloader)))
+
+            for (img, label) in progress_bar:
+                loss, mean, sigma = self.training_step(img.to(device), label)
+
+                if self.args.use_wandb:
+                    wandb.log(dict(loss=loss, mean=mean, sigma=sigma), step=self.step)
+
+                progress_bar.set_description(f"{epoch=}, {loss=:.4f}, examples_seen={self.step}")
+
+            self.evaluate()
+
+        if self.args.use_wandb:
+            wandb.finish()
+
+
+args = VAEArgs(latent_dim_size=10, hidden_dim_size=100, use_wandb=True)
+trainer = VAETrainer(args)
+torchinfo.summary(trainer.model, input_data=x.to(device))
+# trainer.model.sample_latent_vector(x)
+trainer.train()
 # %%
