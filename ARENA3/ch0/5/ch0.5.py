@@ -525,12 +525,13 @@ class VAETrainer:
         img_pred, mean, logsigma = self.model(img)
         sigma = torch.exp(logsigma)
         # print(img_pred.shape, img.shape)
-        loss = self.loss_fun(img, img_pred) + (((sigma**2 + mean**2 - 1) / 2 - logsigma)).mean() * self.args.beta_kl
+        kl_loss = (((sigma**2 + mean**2 - 1) / 2 - logsigma)).mean() * self.args.beta_kl
+        loss = self.loss_fun(img, img_pred) + kl_loss
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
-        return loss, mean, sigma
+        return loss, mean, sigma, kl_loss
         
     @torch.inference_mode()
     def evaluate(self):
@@ -557,10 +558,10 @@ class VAETrainer:
             progress_bar = tqdm(self.trainloader, total=int(len(self.trainloader)))
 
             for (img, label) in progress_bar:
-                loss, mean, sigma = self.training_step(img.to(device), label)
+                loss, mean, sigma, kl_loss = self.training_step(img.to(device), label)
 
                 if self.args.use_wandb:
-                    wandb.log(dict(loss=loss, mean=mean, sigma=sigma), step=self.step)
+                    wandb.log(dict(loss=loss, mean=mean, sigma=sigma, kl_loss=kl_loss), step=self.step)
 
                 progress_bar.set_description(f"{epoch=}, {loss=:.4f}, examples_seen={self.step}")
 
