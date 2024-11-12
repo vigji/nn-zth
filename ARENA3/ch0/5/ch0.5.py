@@ -577,3 +577,6 @@ torchinfo.summary(trainer.model, input_data=x.to(device))
 # trainer.model.sample_latent_vector(x)
 trainer.train()
 # %%
+small_dataset = Subset(get_dataset("MNIST"), indices=range(0, 5000))    
+visualise_input(trainer.model, small_dataset)
+# %%
