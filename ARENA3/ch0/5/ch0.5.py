@@ -564,7 +564,7 @@ class VAETrainer:
                     wandb.log(dict(loss=loss, mean=mean, sigma=sigma, kl_loss=kl_loss), step=self.step)
 
                 progress_bar.set_description(f"{epoch=}, {loss=:.4f}, examples_seen={self.step}")
-
+                self.step += 1
             self.evaluate()
 
         if self.args.use_wandb:
