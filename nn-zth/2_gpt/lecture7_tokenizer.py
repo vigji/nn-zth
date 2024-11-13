@@ -17,12 +17,14 @@ print("token_length: ", len(tokens))
 # %%
 # The algorithm will search for the most common doublets and replace them with a single new number!
 
+
 def find_most_common(tokens):
     counts = {}
-    for key in zip(tokens[:-1],  tokens[1:]):
+    for key in zip(tokens[:-1], tokens[1:]):
         counts[key] = counts.get(key, 0) + 1
 
     return sorted(counts.items(), key=lambda x: x[1], reverse=True)[0][0]
+
 
 counts = find_most_common(tokens)
 counts

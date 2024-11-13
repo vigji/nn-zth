@@ -29,9 +29,7 @@ from plotly_utils import bar, imshow
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 MAIN = __name__ == "__main__"
