@@ -727,3 +727,33 @@ def visualise_input(
 
 visualise_input(trainer.model, small_dataset)
 # %%
+# GANs
+
+class Tanh(nn.Module):
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        return (t.exp(x) - t.exp(-x)) / (t.exp(x) + t.exp(-x))
+
+
+tests.test_Tanh(Tanh)
+
+
+class LeakyReLU(nn.Module):
+    def __init__(self, negative_slope: float = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        return t.max(x, x * self.negative_slope)
+
+    def extra_repr(self) -> str:
+        return f"LeakyReLU; negative slope: {self.negative_slope}"
+
+tests.test_LeakyReLU(LeakyReLU)
+
+
+class Sigmoid(nn.Module):
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        return 1 / (1 + t.exp(-x))
+
+tests.test_Sigmoid(Sigmoid)
+# %%
