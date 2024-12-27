@@ -804,12 +804,16 @@ class Generator(nn.Module):
         w = h
 
         n_out_features = c * h * w
-        self.linear_and_rearrange = nn.Sequential(*[
-            nn.Linear(
-            in_features=latent_dim_size, out_features=n_out_features, bias=False
-        ),
-        einops.layers.torch.Rearrange("b (c w h) -> b c w h", c=c,h=h, w=w),
-        BatchNorm2d(num_features=c), ReLU()])
+        self.linear_and_rearrange = nn.Sequential(
+            *[
+                nn.Linear(
+                    in_features=latent_dim_size, out_features=n_out_features, bias=False
+                ),
+                einops.layers.torch.Rearrange("b (c w h) -> b c w h", c=c, h=h, w=w),
+                BatchNorm2d(num_features=c),
+                ReLU(),
+            ]
+        )
 
         layers = []
 
@@ -949,12 +953,19 @@ class DCGAN(nn.Module):
         and discriminator).
         """
         super().__init__()
-        
-        self.netD = Discriminator(img_size=img_size, img_channels=img_channels,
-                                  hidden_channels=hidden_channels)
-        self.netG = Generator(latent_dim_size=latent_dim_size, img_channels=img_channels,
-                              img_size=img_size, hidden_channels=hidden_channels)
-        
+
+        self.netD = Discriminator(
+            img_size=img_size,
+            img_channels=img_channels,
+            hidden_channels=hidden_channels,
+        )
+        self.netG = Generator(
+            latent_dim_size=latent_dim_size,
+            img_channels=img_channels,
+            img_size=img_size,
+            hidden_channels=hidden_channels,
+        )
+
         solutions.initialize_weights(self)
 
 
@@ -962,28 +973,39 @@ model = DCGAN().to(device)
 x = t.randn(3, 100).to(device)
 print(torchinfo.summary(model.netG, input_data=x), end="\n\n")
 print(torchinfo.summary(model.netD, input_data=model.netG(x)))
+
+
 # %%
 def initialize_weights(model: nn.Module) -> None:
-    '''
+    """
     Initializes weights according to the DCGAN paper, by modifying model weights in place.
-    '''
+    """
     nn.init.normal_(model)
 
-tests.test_initialize_weights(initialize_weights, solutions.ConvTranspose2d, Conv2d, Linear, BatchNorm2d)
+
+tests.test_initialize_weights(
+    initialize_weights, solutions.ConvTranspose2d, Conv2d, Linear, BatchNorm2d
+)
 # %%
-?nn.init.normal_
 # %%
 for module in model.modules():
-    if any([isinstance(module, m) for m in [Conv2d, 
-                                            nn.Conv2d,
-                                            nn.ConvTranspose2d, 
-                                            solutions.ConvTranspose2d,
-                                            nn.Linear,
-                                            Linear]]):
-           nn.init.normal_(module.weight.data, 0.0, 0.02)
-    elif any([isinstance(module, m) for m in [BatchNorm2d,  nn.BatchNorm2d]]):
-            nn.init.normal_(module.weight.data, 1.0, 0.02)
-            nn.init.constant_(module.bias.data, 0.0)
+    if any(
+        [
+            isinstance(module, m)
+            for m in [
+                Conv2d,
+                nn.Conv2d,
+                nn.ConvTranspose2d,
+                solutions.ConvTranspose2d,
+                nn.Linear,
+                Linear,
+            ]
+        ]
+    ):
+        nn.init.normal_(module.weight.data, 0.0, 0.02)
+    elif any([isinstance(module, m) for m in [BatchNorm2d, nn.BatchNorm2d]]):
+        nn.init.normal_(module.weight.data, 1.0, 0.02)
+        nn.init.constant_(module.bias.data, 0.0)
     else:
         print("Not initializing ", module)
 # %%
