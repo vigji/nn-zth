@@ -3,6 +3,7 @@ import os
 from pyexpat import model
 import sys
 from altair import layer
+from annotated_types import Ge
 from click import progressbar
 import einops.layers
 import torch as t
@@ -803,19 +804,19 @@ class Generator(nn.Module):
         w = h
 
         n_out_features = c * h * w
-        self.linear = nn.Linear(
+        self.linear_and_rearrange = nn.Sequential(*[
+            nn.Linear(
             in_features=latent_dim_size, out_features=n_out_features, bias=False
-        )
+        ),
+        einops.layers.torch.Rearrange("b (c w h) -> b c w h", c=c,h=h, w=w),
+        BatchNorm2d(num_features=c), ReLU()])
 
-        self.rearranging_pattern = f"b ({c} {h} {w}) -> b {c} {h} {w}"
-
-        layers = [BatchNorm2d(num_features=c), ReLU()]
+        layers = []
 
         reversed_channels = hidden_channels[::-1]
         prev_n_channels = reversed_channels[0]
-        for i, out_hidden_channels in enumerate(reversed_channels[1:]):
-            step_n = n_layers - i - 1
-            # n_out_features = out_hidden_channels[-1] * (img_size // 2 ** step_n) * (img_size // 2 ** step_n)
+
+        for out_hidden_channels in reversed_channels[1:]:
 
             layers.append(
                 nn.ConvTranspose2d(
@@ -830,12 +831,11 @@ class Generator(nn.Module):
             layers.append(nn.BatchNorm2d(num_features=out_hidden_channels))
             layers.append(ReLU())
             prev_n_channels = out_hidden_channels
-        # layers.append(nn.View())
 
         layers.append(
             nn.ConvTranspose2d(
                 in_channels=prev_n_channels,
-                out_channels=3,
+                out_channels=img_channels,
                 kernel_size=4,
                 stride=2,
                 padding=1,
@@ -847,8 +847,7 @@ class Generator(nn.Module):
         self.network = nn.Sequential(*layers)
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        x = self.linear(x)
-        x = einops.rearrange(x, self.rearranging_pattern)
+        x = self.linear_and_rearrange(x)
         return self.network(x)
 
 
@@ -950,4 +949,41 @@ class DCGAN(nn.Module):
         and discriminator).
         """
         super().__init__()
-        pass
+        
+        self.netD = Discriminator(img_size=img_size, img_channels=img_channels,
+                                  hidden_channels=hidden_channels)
+        self.netG = Generator(latent_dim_size=latent_dim_size, img_channels=img_channels,
+                              img_size=img_size, hidden_channels=hidden_channels)
+        
+        solutions.initialize_weights(self)
+
+
+model = DCGAN().to(device)
+x = t.randn(3, 100).to(device)
+print(torchinfo.summary(model.netG, input_data=x), end="\n\n")
+print(torchinfo.summary(model.netD, input_data=model.netG(x)))
+# %%
+def initialize_weights(model: nn.Module) -> None:
+    '''
+    Initializes weights according to the DCGAN paper, by modifying model weights in place.
+    '''
+    nn.init.normal_(model)
+
+tests.test_initialize_weights(initialize_weights, solutions.ConvTranspose2d, Conv2d, Linear, BatchNorm2d)
+# %%
+?nn.init.normal_
+# %%
+for module in model.modules():
+    if any([isinstance(module, m) for m in [Conv2d, 
+                                            nn.Conv2d,
+                                            nn.ConvTranspose2d, 
+                                            solutions.ConvTranspose2d,
+                                            nn.Linear,
+                                            Linear]]):
+           nn.init.normal_(module.weight.data, 0.0, 0.02)
+    elif any([isinstance(module, m) for m in [BatchNorm2d,  nn.BatchNorm2d]]):
+            nn.init.normal_(module.weight.data, 1.0, 0.02)
+            nn.init.constant_(module.bias.data, 0.0)
+    else:
+        print("Not initializing ", module)
+# %%
