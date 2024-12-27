@@ -789,6 +789,44 @@ class Generator(nn.Module):
         n_layers = len(hidden_channels)
         assert img_size % (2 ** n_layers) == 0, "activation size must double at each layer"
 
+        self.activation_functions = [nn.ReLu,]* (n_layers - 1) + [Tanh,]
+
+        n_out_features = hidden_channels[-1] * (img_size // 2 ** n_layers) * (img_size // 2 ** n_layers)
+        self.linear = nn.Linear(in_features=1,
+                                out_features=n_out_features, 
+                                bias=False)
+        
+        layers = [BatchNorm2d(num_features=n_out_features),
+                  ReLU()]
+        
+        reversed_channels = hidden_channels[::-1]
+        prev_n_channels = reversed_channels[0]
+        for i, out_hidden_channels in enumerate(reversed_channels[1:]):
+            step_n = n_layers - i - 1
+            # n_out_features = out_hidden_channels[-1] * (img_size // 2 ** step_n) * (img_size // 2 ** step_n)
+
+            layers.append(nn.ConvTranspose2d(
+                                            in_channels=prev_n_channels,
+                                            out_channels=out_hidden_channels,
+                                            kernel_size=4,
+                                            stride=2,
+                                            padding=1,
+                                            bias=False,
+                                        ))
+            layers.append(nn.BatchNorm2d(num_features=out_hidden_channels))
+            layers.append(nn.ReLu())
+            prev_n_channels = out_hidden_channels
+        # layers.append(nn.View())
+
+        layers.append(nn.ConvTranspose2d(
+                                            in_channels=prev_n_channels,
+                                            out_channels=out_hidden_channels,
+                                            kernel_size=4,
+                                            stride=2,
+                                            padding=1,
+                                            bias=False,
+                                        ))
+
         super().__init__()
         pass
 
@@ -856,7 +894,7 @@ class Discriminator(nn.Module):
         pass
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        pass
+        return self.network(x)
 
 print_param_count(Discriminator(), solutions.DCGAN().netD)
 
