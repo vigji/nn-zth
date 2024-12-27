@@ -2,6 +2,7 @@
 import os
 from pyexpat import model
 import sys
+from altair import layer
 from click import progressbar
 import einops.layers
 import torch as t
@@ -789,14 +790,20 @@ class Generator(nn.Module):
         n_layers = len(hidden_channels)
         assert img_size % (2 ** n_layers) == 0, "activation size must double at each layer"
 
-        self.activation_functions = [nn.ReLu,]* (n_layers - 1) + [Tanh,]
+        super().__init__()
 
-        n_out_features = hidden_channels[-1] * (img_size // 2 ** n_layers) * (img_size // 2 ** n_layers)
-        self.linear = nn.Linear(in_features=1,
+        c = hidden_channels[-1]
+        h = (img_size // 2 ** n_layers)
+        w = h
+
+        n_out_features = c * h * w
+        self.linear = nn.Linear(in_features=latent_dim_size,
                                 out_features=n_out_features, 
                                 bias=False)
         
-        layers = [BatchNorm2d(num_features=n_out_features),
+        self.rearranging_pattern = f"b ({c} {h} {w}) -> b {c} {h} {w}"
+        
+        layers = [BatchNorm2d(num_features=c),
                   ReLU()]
         
         reversed_channels = hidden_channels[::-1]
@@ -814,24 +821,30 @@ class Generator(nn.Module):
                                             bias=False,
                                         ))
             layers.append(nn.BatchNorm2d(num_features=out_hidden_channels))
-            layers.append(nn.ReLu())
+            layers.append(ReLU())
             prev_n_channels = out_hidden_channels
         # layers.append(nn.View())
 
         layers.append(nn.ConvTranspose2d(
                                             in_channels=prev_n_channels,
-                                            out_channels=out_hidden_channels,
+                                            out_channels=3,
                                             kernel_size=4,
                                             stride=2,
                                             padding=1,
                                             bias=False,
                                         ))
+        layers.append(Tanh())
 
-        super().__init__()
-        pass
+        self.network = nn.Sequential(*layers)
+
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        pass
+        x = self.linear(x)
+        x = einops.rearrange(x, self.rearranging_pattern)
+        return self.network(x)
+
+print_param_count(Generator(), solutions.DCGAN().netG)
+
 
 # %%
 class Discriminator(nn.Module):
