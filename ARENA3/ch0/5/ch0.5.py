@@ -1009,3 +1009,129 @@ for module in model.modules():
     else:
         print("Not initializing ", module)
 # %%
+
+@dataclass
+class DCGANArgs():
+    '''
+    Class for the arguments to the DCGAN (training and architecture).
+    Note, we use field(defaultfactory(...)) when our default value is a mutable object.
+    '''
+    # architecture
+    latent_dim_size: int = 100
+    hidden_channels: list[int] = field(default_factory=lambda: [128, 256, 512])
+
+    # data & training
+    dataset: Literal["MNIST", "CELEB"] = "CELEB"
+    batch_size: int = 64
+    epochs: int = 3
+    lr: float = 0.0002
+    betas: tuple[float, float] = (0.5, 0.999)
+    clip_grad_norm: float | None = 1.0
+
+    # logging
+    use_wandb: bool = False
+    wandb_project: str | None = "day5-gan"
+    wandb_name: str | None = None
+
+
+class DCGANTrainer:
+    def __init__(self, args: DCGANArgs):
+        self.args = args
+
+        self.trainset = get_dataset(self.args.dataset)
+        self.trainloader = DataLoader(self.trainset, batch_size=args.batch_size, shuffle=True, num_workers=8)
+
+        batch, img_channels, img_height, img_width = next(iter(self.trainloader))[0].shape
+        assert img_height == img_width
+
+        self.model = DCGAN(
+            args.latent_dim_size,
+            img_height,
+            img_channels,
+            args.hidden_channels,
+        ).to(device).train()
+
+        self.optG = t.optim.Adam(self.model.netG.parameters(), lr=args.lr, betas=args.betas)
+        self.optD = t.optim.Adam(self.model.netD.parameters(), lr=args.lr, betas=args.betas)
+
+
+    def training_step_discriminator(self, img_real: t.Tensor, img_fake: t.Tensor) -> t.Tensor:
+        '''
+        Generates a real and fake image, and performs a gradient step on the discriminator 
+        to maximize log(D(x)) + log(1-D(G(z))).
+        '''
+        pass
+
+
+    def training_step_generator(self, img_fake: t.Tensor) -> t.Tensor:
+        '''
+        Performs a gradient step on the generator to maximize log(D(G(z))).
+        '''
+        pass
+
+
+    @t.inference_mode()
+    def evaluate(self) -> None:
+        '''
+        Performs evaluation by generating 8 instances of random noise and passing them through
+        the generator, then either logging the results to Weights & Biases or displaying them inline.
+        '''
+        pass
+
+
+    def train(self) -> None:
+        '''
+        Performs a full training run, while optionally logging to Weights & Biases.
+        '''
+        self.step = 0
+        if self.args.use_wandb:
+            wandb.init(project=self.args.wandb_project, name=self.args.wandb_name)
+
+        for epoch in range(self.args.epochs):
+
+            progress_bar = tqdm(self.trainloader, total=len(self.trainloader))
+
+            for (img_real, label) in progress_bar:
+                # Generate random noise & fake image
+                noise = t.randn(self.args.batch_size, self.args.latent_dim_size).to(device)
+                img_real = img_real.to(device)
+                img_fake = self.model.netG(noise)
+
+                # Training steps
+                lossD = self.training_step_discriminator(img_real, img_fake.detach())
+                lossG = self.training_step_generator(img_fake)
+
+                # Log data
+                if self.args.use_wandb:
+                    wandb.log(dict(lossD=lossD, lossG=lossG), step=self.step)
+
+                # Update progress bar
+                self.step += img_real.shape[0]
+                progress_bar.set_description(f"{epoch=}, lossD={lossD:.4f}, lossG={lossG:.4f}, examples_seen={self.step}")
+
+            # Evaluate model on the same batch of random data
+            self.evaluate()
+
+        if self.args.use_wandb:
+            wandb.finish()
+
+
+# Arguments for MNIST
+args = DCGANArgs(
+    dataset="MNIST",
+    hidden_channels=[8, 16],
+    epochs=10,
+    batch_size=128,
+)
+trainer = DCGANTrainer(args)
+trainer.train()
+
+# Arguments for CelebA
+args = DCGANArgs(
+    dataset="CELEB",
+    hidden_channels=[128, 256, 512],
+    batch_size=32, # if you get cuda errors, bring this down!
+    epochs=5,
+)
+trainer = DCGANTrainer(args)
+trainer.train()
