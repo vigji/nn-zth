@@ -730,6 +730,7 @@ visualise_input(trainer.model, small_dataset)
 # %%
 # GANs
 
+
 class Tanh(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         return (t.exp(x) - t.exp(-x)) / (t.exp(x) + t.exp(-x))
@@ -749,6 +750,7 @@ class LeakyReLU(nn.Module):
     def extra_repr(self) -> str:
         return f"LeakyReLU; negative slope: {self.negative_slope}"
 
+
 tests.test_LeakyReLU(LeakyReLU)
 
 
@@ -756,9 +758,11 @@ class Sigmoid(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         return 1 / (1 + t.exp(-x))
 
+
 tests.test_Sigmoid(Sigmoid)
 # %%
 # Implement the network:
+
 
 class Generator(nn.Module):
 
@@ -769,7 +773,7 @@ class Generator(nn.Module):
         img_channels: int = 3,
         hidden_channels: list[int] = [128, 256, 512],
     ):
-        '''
+        """
         Implements the generator architecture from the DCGAN paper (the diagram at the top
         of page 4). We assume the size of the activations doubles at each layer (so image
         size has to be divisible by 2 ** len(hidden_channels)).
@@ -783,65 +787,70 @@ class Generator(nn.Module):
                 the number of channels in the image (3 for RGB, 1 for grayscale)
             hidden_channels:
                 the number of channels in the hidden layers of the generator (starting from
-                the smallest / closest to the generated images, and working backwards to the 
+                the smallest / closest to the generated images, and working backwards to the
                 latent vector).
 
-        '''
+        """
         n_layers = len(hidden_channels)
-        assert img_size % (2 ** n_layers) == 0, "activation size must double at each layer"
+        assert (
+            img_size % (2**n_layers) == 0
+        ), "activation size must double at each layer"
 
         super().__init__()
 
         c = hidden_channels[-1]
-        h = (img_size // 2 ** n_layers)
+        h = img_size // 2**n_layers
         w = h
 
         n_out_features = c * h * w
-        self.linear = nn.Linear(in_features=latent_dim_size,
-                                out_features=n_out_features, 
-                                bias=False)
-        
+        self.linear = nn.Linear(
+            in_features=latent_dim_size, out_features=n_out_features, bias=False
+        )
+
         self.rearranging_pattern = f"b ({c} {h} {w}) -> b {c} {h} {w}"
-        
-        layers = [BatchNorm2d(num_features=c),
-                  ReLU()]
-        
+
+        layers = [BatchNorm2d(num_features=c), ReLU()]
+
         reversed_channels = hidden_channels[::-1]
         prev_n_channels = reversed_channels[0]
         for i, out_hidden_channels in enumerate(reversed_channels[1:]):
             step_n = n_layers - i - 1
             # n_out_features = out_hidden_channels[-1] * (img_size // 2 ** step_n) * (img_size // 2 ** step_n)
 
-            layers.append(nn.ConvTranspose2d(
-                                            in_channels=prev_n_channels,
-                                            out_channels=out_hidden_channels,
-                                            kernel_size=4,
-                                            stride=2,
-                                            padding=1,
-                                            bias=False,
-                                        ))
+            layers.append(
+                nn.ConvTranspose2d(
+                    in_channels=prev_n_channels,
+                    out_channels=out_hidden_channels,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    bias=False,
+                )
+            )
             layers.append(nn.BatchNorm2d(num_features=out_hidden_channels))
             layers.append(ReLU())
             prev_n_channels = out_hidden_channels
         # layers.append(nn.View())
 
-        layers.append(nn.ConvTranspose2d(
-                                            in_channels=prev_n_channels,
-                                            out_channels=3,
-                                            kernel_size=4,
-                                            stride=2,
-                                            padding=1,
-                                            bias=False,
-                                        ))
+        layers.append(
+            nn.ConvTranspose2d(
+                in_channels=prev_n_channels,
+                out_channels=3,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
+        )
         layers.append(Tanh())
 
         self.network = nn.Sequential(*layers)
-
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         x = self.linear(x)
         x = einops.rearrange(x, self.rearranging_pattern)
         return self.network(x)
+
 
 print_param_count(Generator(), solutions.DCGAN().netG)
 
@@ -855,7 +864,7 @@ class Discriminator(nn.Module):
         img_channels: int = 3,
         hidden_channels: list[int] = [128, 256, 512],
     ):
-        '''
+        """
         Implements the discriminator architecture from the DCGAN paper (the mirror image of
         the diagram at the top of page 4). We assume the size of the activations doubles at
         each layer (so image size has to be divisible by 2 ** len(hidden_channels)).
@@ -869,39 +878,49 @@ class Discriminator(nn.Module):
                 the number of channels in the hidden layers of the discriminator (starting from
                 the smallest / closest to the input image, and working forwards to the probability
                 output).
-        '''
+        """
         n_layers = len(hidden_channels)
-        assert img_size % (2 ** n_layers) == 0, "activation size must double at each layer"
+        assert (
+            img_size % (2**n_layers) == 0
+        ), "activation size must double at each layer"
 
         super().__init__()
 
         # self.sequence = nn.Sequential([
-            # Conv kernel 4x4, stride 2, padding 1, channels -> 16
+        # Conv kernel 4x4, stride 2, padding 1, channels -> 16
 
         # activation_functions = [nn.ReLU, nn.ReLU, Tanh]
         layers = []
         in_channels = img_channels
         batch_norms = [False, True, True]
-        for n_hidden_channels, batch_norm in zip(hidden_channels, 
-                                                          batch_norms):
-            layers.append(nn.Conv2d(
-                in_channels=in_channels,
-                out_channels=n_hidden_channels,
-                kernel_size=4,
-                stride=2,
-                padding=1,
-                bias=False,
-            ))
+        for n_hidden_channels, batch_norm in zip(hidden_channels, batch_norms):
+            layers.append(
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=n_hidden_channels,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    bias=False,
+                )
+            )
             if batch_norm:
                 layers.append(nn.BatchNorm2d(num_features=n_hidden_channels))
             layers.append(LeakyReLU())
 
             in_channels = n_hidden_channels
-        
+
         layers.append(nn.Flatten())
-        layers.append(nn.Linear(in_features=n_hidden_channels * (img_size // 2 ** n_layers) * (img_size // 2 ** n_layers), 
-                                out_features=1, bias=False))
-        
+        layers.append(
+            nn.Linear(
+                in_features=n_hidden_channels
+                * (img_size // 2**n_layers)
+                * (img_size // 2**n_layers),
+                out_features=1,
+                bias=False,
+            )
+        )
+
         self.network = nn.Sequential(*layers)
 
         pass
@@ -909,9 +928,11 @@ class Discriminator(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         return self.network(x)
 
+
 print_param_count(Discriminator(), solutions.DCGAN().netD)
 
 # %%
+
 
 class DCGAN(nn.Module):
     netD: Discriminator
@@ -924,9 +945,9 @@ class DCGAN(nn.Module):
         img_channels: int = 3,
         hidden_channels: list[int] = [128, 256, 512],
     ):
-        '''
+        """
         Implements the DCGAN architecture from the DCGAN paper (i.e. a combined generator
         and discriminator).
-        '''
+        """
         super().__init__()
         pass
