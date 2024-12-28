@@ -1022,7 +1022,7 @@ class DCGANArgs():
 
     # data & training
     dataset: Literal["MNIST", "CELEB"] = "CELEB"
-    batch_size: int = 64
+    batch_size: int = 8
     epochs: int = 3
     lr: float = 0.0002
     betas: tuple[float, float] = (0.5, 0.999)
@@ -1062,24 +1062,41 @@ class DCGANTrainer:
         '''
         
         self.optD.zero_grad()
-        # z = t.randn(args.batch_size, args.latent_dim_size).to(device)
 
         d_g_z = self.model.netD(img_fake)
         d_x = self.model.netD(img_real)
 
-        mean_log_d_g_z = t.mean(1 - d_g_z, axis=0)
-        mean_log_g_x = t.mean(d_x, axis=0)
+        mean_log_d_g_z = t.mean(t.log(1 - d_g_z), axis=0)
+        mean_log_g_x = t.mean(t.log(d_x), axis=0)
 
         loss = - (mean_log_d_g_z + mean_log_g_x)
 
+        loss.backward()
 
+        nn.utils.clip_grad_norm_(self.model.netD.parameters(), self.args.clip_grad_norm)
+
+        self.optD.step()
 
 
     def training_step_generator(self, img_fake: t.Tensor) -> t.Tensor:
         '''
         Performs a gradient step on the generator to maximize log(D(G(z))).
         '''
-        pass
+        self.optG.zero_grad()
+
+        D_G_z = self.model.netD(img_fake)
+
+        # Calculating loss with clamping behaviour:
+        labels_real = t.ones_like(D_G_z)
+        loss = nn.BCELoss()(D_G_z, labels_real)
+
+        loss.backward()
+        
+        nn.utils.clip_grad_norm_(self.model.netG.parameters(), self.args.clip_grad_norm)
+
+        self.optG.step()
+
+
 
 
     @t.inference_mode()
@@ -1149,5 +1166,7 @@ trainer = DCGANTrainer(args)
 trainer.train()
 
 # %%
-t.mean(t.randn(10, 2), axis=0)
+trainset = get_dataset(args.dataset)
+trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True) #, num_workers=1)
+batch, img_channels, img_height, img_width = next(iter(trainloader))[0].shape
 # %%
