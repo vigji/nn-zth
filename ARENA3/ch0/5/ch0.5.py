@@ -10,7 +10,6 @@ import torch as t
 from torch import nn, optim
 import einops
 from einops.layers.torch import Rearrange
-import torch
 from tqdm import tqdm
 from dataclasses import dataclass, field
 from torchvision import datasets, transforms
@@ -1018,6 +1017,7 @@ class DCGANArgs():
     '''
     # architecture
     latent_dim_size: int = 100
+    # Trick to initialize without pointing to always the same list!
     hidden_channels: list[int] = field(default_factory=lambda: [128, 256, 512])
 
     # data & training
@@ -1060,7 +1060,19 @@ class DCGANTrainer:
         Generates a real and fake image, and performs a gradient step on the discriminator 
         to maximize log(D(x)) + log(1-D(G(z))).
         '''
-        pass
+        
+        self.optD.zero_grad()
+        # z = t.randn(args.batch_size, args.latent_dim_size).to(device)
+
+        d_g_z = self.model.netD(img_fake)
+        d_x = self.model.netD(img_real)
+
+        mean_log_d_g_z = t.mean(1 - d_g_z, axis=0)
+        mean_log_g_x = t.mean(d_x, axis=0)
+
+        loss = - (mean_log_d_g_z + mean_log_g_x)
+
+
 
 
     def training_step_generator(self, img_fake: t.Tensor) -> t.Tensor:
@@ -1135,3 +1147,7 @@ args = DCGANArgs(
 )
 trainer = DCGANTrainer(args)
 trainer.train()
+
+# %%
+t.mean(t.randn(10, 2), axis=0)
+# %%
