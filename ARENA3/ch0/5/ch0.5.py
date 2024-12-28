@@ -295,7 +295,7 @@ class AutoencoderTrainer:
 
         return loss
 
-    @torch.inference_mode()
+    @t.inference_mode()
     def evaluate(self):
         preds = self.model(HOLDOUT_DATA)
 
@@ -349,7 +349,7 @@ pred.shape
 # Let's try to visualize the effects of latent dimensions
 
 
-@torch.inference_mode()
+@t.inference_mode()
 def visualize_embeddings(model, n_pts=11, range_span=3):
     # we will visualize the first two dims:
     grid_latent = torch.zeros((n_pts**2, model.latent_dim_size)).to(device)
@@ -566,7 +566,7 @@ class VAETrainer:
 
         return loss, mean, sigma, kl_loss
 
-    @torch.inference_mode()
+    @t.inference_mode()
     def evaluate(self):
         preds, _, _ = self.model(HOLDOUT_DATA)
 
@@ -728,7 +728,9 @@ def visualise_input(
 
 visualise_input(trainer.model, small_dataset)
 # %%
+# ============================
 # GANs
+# ============================
 
 
 class Tanh(nn.Module):
@@ -979,34 +981,31 @@ def initialize_weights(model: nn.Module) -> None:
     """
     Initializes weights according to the DCGAN paper, by modifying model weights in place.
     """
-    nn.init.normal_(model)
+    for module in model.modules():
+        if any(
+            [
+                isinstance(module, m)
+                for m in [
+                    Conv2d,
+                    nn.Conv2d,
+                    nn.ConvTranspose2d,
+                    solutions.ConvTranspose2d,
+                    nn.Linear,
+                    Linear,
+                ]
+            ]
+        ):
+            nn.init.normal_(module.weight.data, 0.0, 0.02)
+        elif any([isinstance(module, m) for m in [BatchNorm2d, nn.BatchNorm2d]]):
+            nn.init.normal_(module.weight.data, 1.0, 0.02)
+            nn.init.constant_(module.bias.data, 0.0)
 
 
 tests.test_initialize_weights(
     initialize_weights, solutions.ConvTranspose2d, Conv2d, Linear, BatchNorm2d
 )
-# %%
-# %%
-for module in model.modules():
-    if any(
-        [
-            isinstance(module, m)
-            for m in [
-                Conv2d,
-                nn.Conv2d,
-                nn.ConvTranspose2d,
-                solutions.ConvTranspose2d,
-                nn.Linear,
-                Linear,
-            ]
-        ]
-    ):
-        nn.init.normal_(module.weight.data, 0.0, 0.02)
-    elif any([isinstance(module, m) for m in [BatchNorm2d, nn.BatchNorm2d]]):
-        nn.init.normal_(module.weight.data, 1.0, 0.02)
-        nn.init.constant_(module.bias.data, 0.0)
-    else:
-        print("Not initializing ", module)
+    # else:
+    #     print("Not initializing ", module)
 # %%
 
 @dataclass
@@ -1169,4 +1168,6 @@ trainer.train()
 trainset = get_dataset(args.dataset)
 trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True) #, num_workers=1)
 batch, img_channels, img_height, img_width = next(iter(trainloader))[0].shape
+# %%
+batch
 # %%
