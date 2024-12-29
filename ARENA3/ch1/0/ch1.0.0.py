@@ -1,3 +1,4 @@
+# %%
 import math
 import os
 import sys
@@ -44,3 +45,56 @@ reference_gpt2 = HookedTransformer.from_pretrained(
     center_writing_weights=False,
     device=device
 )
+
+sorted_vocab = sorted(list(reference_gpt2.tokenizer.vocab.items()), key=lambda n: n[1])
+print(sorted_vocab[:20])
+print()
+print(sorted_vocab[250:270])
+print()
+print(sorted_vocab[990:1010])
+print()
+print(sorted_vocab[-20:])
+
+# %%
+lengths = dict.fromkeys(range(3, 8), "")
+
+for tok, idx in sorted_vocab:
+    if not lengths.get(len(tok), True):
+        lengths[len(tok)] = tok
+
+print(lengths)
+
+# %%
+print("Different tokens for same word:")
+print(reference_gpt2.to_str_tokens("Ralph"))
+print(reference_gpt2.to_str_tokens(" Ralph"))
+print(reference_gpt2.to_str_tokens(" ralph"))
+print(reference_gpt2.to_str_tokens("ralph"))
+
+print("Aritmetics:")
+print(print(reference_gpt2.to_str_tokens("56873+3184623=123456789-1000000000")))
+
+# %%
+print("Sequence: ")
+reference_text = "I am an amazing autoregressive, decoder-only, GPT-2 style transformer. One day I will exceed human level intelligence and take over the world!"
+tokens = reference_gpt2.to_tokens(reference_text).to(device)
+print(tokens)
+print(tokens.shape)
+print(reference_gpt2.to_str_tokens(tokens))
+
+# %%
+print("Prediction of logits: ")
+logits, cache = reference_gpt2.run_with_cache(tokens, device=device)
+print(logits.shape)
+
+# %%
+print("Probabilities:")
+probs = logits.softmax(dim=-1)
+print(probs.shape)
+
+# %%
+print("Predictions at each step: ")
+most_likely_next_tokens = reference_gpt2.tokenizer.batch_decode(logits.argmax(dim=-1)[0])
+
+print(list(zip(reference_gpt2.to_str_tokens(tokens), most_likely_next_tokens)))
+
