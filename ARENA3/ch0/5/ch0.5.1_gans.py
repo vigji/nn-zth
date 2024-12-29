@@ -132,15 +132,16 @@ def display_data(x: t.Tensor, nrows: int, title: str):
     )
 
 
-# Load in MNIST, get first batch from dataloader, and display
-trainset_mnist = get_dataset("MNIST")
-x = next(iter(DataLoader(trainset_mnist, batch_size=64)))[0]
-display_data(x, nrows=8, title="MNIST data")
+if __name__ == '__main__':
+    # Load in MNIST, get first batch from dataloader, and display
+    trainset_mnist = get_dataset("MNIST")
+    x = next(iter(DataLoader(trainset_mnist, batch_size=64)))[0]
+    display_data(x, nrows=8, title="MNIST data")
 
-# Load in CelebA, get first batch from dataloader, and display
-trainset_celeb = get_dataset("CELEB")
-x = next(iter(DataLoader(trainset_celeb, batch_size=64)))[0]
-display_data(x, nrows=8, title="CelebA data")
+    # Load in CelebA, get first batch from dataloader, and display
+    trainset_celeb = get_dataset("CELEB")
+    x = next(iter(DataLoader(trainset_celeb, batch_size=64)))[0]
+    display_data(x, nrows=8, title="CelebA data")
 
 # %%
 
@@ -454,7 +455,7 @@ class DCGANArgs():
     # data & training
     dataset: Literal["MNIST", "CELEB"] = "CELEB"
     batch_size: int = 8
-    epochs: int = 3
+    epochs: int = 1
     lr: float = 0.0002
     betas: tuple[float, float] = (0.5, 0.999)
     clip_grad_norm: float | None = 1.0
@@ -480,7 +481,7 @@ class DCGANTrainer:
 
         self.trainset = get_dataset(self.args.dataset)
         self.trainloader = DataLoader(self.trainset, batch_size=args.batch_size, 
-                                      shuffle=True, num_workers=8)
+                                      shuffle=True)
 
         batch, img_channels, img_height, img_width = next(iter(self.trainloader))[0].shape
         assert img_height == img_width
@@ -518,6 +519,8 @@ class DCGANTrainer:
 
         self.optD.step()
 
+        return loss.item()
+
 
     def training_step_generator(self, img_fake: t.Tensor) -> t.Tensor:
         '''
@@ -528,8 +531,9 @@ class DCGANTrainer:
         D_G_z = self.model.netD(img_fake)
 
         # Calculating loss with clamping behaviour:
-        labels_real = t.ones_like(D_G_z)
-        loss = nn.BCELoss()(D_G_z, labels_real)
+        # labels_real = t.ones_like(D_G_z)
+        # loss = nn.BCELoss()(D_G_z, labels_real)
+        loss = - (t.log(D_G_z).mean())
 
         loss.backward()
         
@@ -537,7 +541,7 @@ class DCGANTrainer:
 
         self.optG.step()
 
-
+        return loss.item()
 
 
     @t.inference_mode()
@@ -555,6 +559,8 @@ class DCGANTrainer:
         '''
         self.step = 0
         if self.args.use_wandb:
+            print("logging")
+
             wandb.init(project=self.args.wandb_project, name=self.args.wandb_name)
 
         for epoch in range(self.args.epochs):
@@ -573,6 +579,7 @@ class DCGANTrainer:
 
                 # Log data
                 if self.args.use_wandb:
+                    print("logging")
                     wandb.log(dict(lossD=lossD, lossG=lossG), step=self.step)
 
                 # Update progress bar
@@ -583,6 +590,8 @@ class DCGANTrainer:
             self.evaluate()
 
         if self.args.use_wandb:
+            print("logging")
+
             wandb.finish()
 
 
@@ -590,7 +599,7 @@ class DCGANTrainer:
 args = DCGANArgs(
     dataset="MNIST",
     hidden_channels=[8, 16],
-    epochs=10,
+    epochs=1,
     batch_size=128,
 )
 trainer = DCGANTrainer(args)
@@ -609,11 +618,8 @@ trainer = DCGANTrainer(args)
 trainer.train()
 
 # %%
-trainset = get_dataset(args.dataset)
-trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=8)
-batch, img_channels, img_height, img_width = next(iter(trainloader))[0].shape
-# %%
-batch
+s = t.Tensor([1])
+s.item()
 # %%
 args
 # %%
