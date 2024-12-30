@@ -10,6 +10,9 @@ from aiohttp import DataQueue
 import circuitsvis as cv
 import datasets
 import einops
+import einops.layers
+import einops.layers.torch
+from matplotlib import axes
 import numpy as np
 import torch as t
 import torch.nn as nn
@@ -130,14 +133,18 @@ d_head = d_model // n_heads
 # %%
 for activation_name, activation in cache.items():
     # Only print for first layer
-    if ".0." in activation_name or "blocks" not in activation_name:
+    #if ".0." in activation_name or "blocks" not in activation_name:
         print(f"{activation_name:30} {tuple(activation.shape)}")
         
 # %%
+param_count = 0
 for name, param in reference_gpt2.named_parameters():
     # Only print for first layer
+    param_count += param.numel()
     if ".0." in name or "blocks" not in name:
         print(f"{name:18} {tuple(param.shape)}")
+
+param_count
 # %%
 
 # As a reference - note there's a lot of stuff we don't care about in here, to do with library internals or other architectures
@@ -192,4 +199,63 @@ def load_gpt2_test(cls, gpt2_layer, input):
     print("Reference output shape:", reference_output.shape, "\n")
     comparison = t.isclose(output, reference_output, atol=1e-4, rtol=1e-3)
     print(f"{comparison.sum()/comparison.numel():.2%} of the values are correct\n")
+
+# %%
+###################
+# LayerNorm
+###################
+
+class LayerNorm(nn.Module):
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.cfg = cfg
+        self.w = nn.Parameter(t.ones(cfg.d_model))
+        self.b = nn.Parameter(t.zeros(cfg.d_model))
+
+    def forward(self, residual: Float[Tensor, "batch posn d_model"]) -> Float[Tensor, "batch posn d_model"]:
+        if self.cfg.debug:
+            print("residual shape: ", residual.shape)
+
+        means = t.mean(residual, axis=-1, keepdim=True)
+        vars = t.var(residual, axis=-1, keepdim=True, unbiased=False)
+
+        normalized = (residual - means) / t.sqrt(vars + self.cfg.layer_norm_eps)
+        scaled = normalized * self.w + self.b
+
+        return scaled
+
+rand_float_test(LayerNorm, [2, 4, 768])
+load_gpt2_test(LayerNorm, reference_gpt2.ln_final, cache["resid_post", 11])
+zero_input = t.zeros_like(cache["resid_post", 11]).to(device)
+load_gpt2_test(LayerNorm, reference_gpt2.ln_final, zero_input)
+
+# %%
+a = t.randn(2, 10, 50)
+W = t.randn(50, 42)
+einops.einsum(a, W, "b s v, v d -> b s d").shape
+from einops.layers.torch import 
+einops.layers.torch
+# %%
+######################
+# Embedding
+######################
+
+class Embed(nn.Module):
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.cfg = cfg
+        self.W_E = nn.Parameter(t.empty((cfg.d_vocab, cfg.d_model)))
+        nn.init.normal_(self.W_E, std=self.cfg.init_range)
+
+    def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_model"]:
+        if self.cfg.debug:
+            print("Input shape: ", tokens.shape)
+
+        return einops.einsum(tokens, self.W_E, "b s v, v d -> b s d")
+
+            
+
+
+rand_int_test(Embed, [2, 4])
+load_gpt2_test(Embed, reference_gpt2.embed, tokens)
 # %%
