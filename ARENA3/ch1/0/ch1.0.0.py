@@ -254,9 +254,44 @@ class Embed(nn.Module):
             print("Input shape: ", tokens.shape)
         return self.W_E[tokens, :]
 
-            
-
 
 rand_int_test(Embed, [2, 4])
 load_gpt2_test(Embed, reference_gpt2.embed, tokens)
+# %%
+#########################
+# Positional embedding
+#########################
+
+class PosEmbed(nn.Module):
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.cfg = cfg
+        self.W_pos = nn.Parameter(t.empty((cfg.n_ctx, cfg.d_model)))
+        nn.init.normal_(self.W_pos, std=self.cfg.init_range)
+
+    def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_model"]:
+        if self.cfg.debug:
+            print("Input shape: ", tokens.shape)
+
+        indices = t.stack([t.arange(tokens.shape[1]) for _ in range(tokens.shape[0])])
+
+        return self.W_pos[indices, :]
+
+
+rand_int_test(PosEmbed, [2, 4])
+load_gpt2_test(PosEmbed, reference_gpt2.pos_embed, tokens)
+
+# %%
+tokens = t.randint(0, 5, (2, 4))
+W_pos = t.randn((cfg.n_ctx, cfg.d_model))
+
+# %%
+%%timeit
+to_stack = W_pos[:tokens.shape[1], :]
+t.stack([to_stack for _ in range(tokens.shape[0])])
+
+# %%
+%%timeit
+batch, seq_len = tokens.shape
+einops.repeat(W_pos[:seq_len], "seq d_model -> batch seq d_model", batch=batch)
 # %%
