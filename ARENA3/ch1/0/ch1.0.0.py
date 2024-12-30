@@ -15,6 +15,7 @@ import einops.layers.torch
 from matplotlib import axes
 import numpy as np
 import torch as t
+import torch
 import torch.nn as nn
 import wandb
 from IPython.display import display
@@ -230,11 +231,12 @@ zero_input = t.zeros_like(cache["resid_post", 11]).to(device)
 load_gpt2_test(LayerNorm, reference_gpt2.ln_final, zero_input)
 
 # %%
-a = t.randn(2, 10, 50)
+a = t.randint(0, 50, (2, 4))
 W = t.randn(50, 42)
-einops.einsum(a, W, "b s v, v d -> b s d").shape
-from einops.layers.torch import 
-einops.layers.torch
+# einops.einsum(a, W, "b s v, v d -> b s d").shape
+# from einops.layers.torch import 
+# einops.layers.torch
+W[a, :].shape
 # %%
 ######################
 # Embedding
@@ -250,8 +252,7 @@ class Embed(nn.Module):
     def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_model"]:
         if self.cfg.debug:
             print("Input shape: ", tokens.shape)
-
-        return einops.einsum(tokens, self.W_E, "b s v, v d -> b s d")
+        return self.W_E[tokens, :]
 
             
 
