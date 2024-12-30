@@ -312,11 +312,11 @@ class Attention(nn.Module):
         '''
         b, n_h, n_q, n_k = attn_scores.shape
 
-        m = ~einops.repeat(t.tril(t.ones(n_q, n_k, device=device, dtype=bool)),
-                           "n_q n_k -> b n_h n_q n_k", 
-                  b=b, n_h=n_h, n_q=n_q, n_k=n_k)
+        all_ones = t.ones(n_q, n_k, device=device, dtype=bool)
+        mask = t.triu(all_ones, diagonal=1)
 
-        return t.masked_fill(attn_scores, m, self.IGNORE)
+        # masked fill works with broadcasting
+        return t.masked_fill(attn_scores, mask, self.IGNORE)
 
 tests.test_causal_mask(Attention.apply_causal_mask)
 # %%
