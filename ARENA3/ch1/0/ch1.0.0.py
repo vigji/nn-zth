@@ -295,3 +295,40 @@ t.stack([to_stack for _ in range(tokens.shape[0])])
 batch, seq_len = tokens.shape
 einops.repeat(W_pos[:seq_len], "seq d_model -> batch seq d_model", batch=batch)
 # %%
+
+class Attention(nn.Module):
+    IGNORE: Float[Tensor, ""]
+
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.cfg = cfg
+        self.register_buffer("IGNORE", t.tensor(float("-inf"), device=device, dtype=t.float32))
+
+    def apply_causal_mask(
+        self, attn_scores: Float[Tensor, "batch n_heads query_pos key_pos"]
+    ) -> Float[Tensor, "batch n_heads query_pos key_pos"]:
+        '''
+        Applies a causal mask to attention scores, and returns masked scores.
+        '''
+        b, n_h, n_q, n_k = attn_scores.shape
+
+        m = ~einops.repeat(t.tril(t.ones(n_q, n_k, device=device, dtype=bool)),
+                           "n_q n_k -> b n_h n_q n_k", 
+                  b=b, n_h=n_h, n_q=n_q, n_k=n_k)
+
+        return t.masked_fill(attn_scores, m, self.IGNORE)
+
+tests.test_causal_mask(Attention.apply_causal_mask)
+# %%
+t.triu(t.ones(3, 3)*2)
+# %%
+seq = 5
+d_model = 758
+b= 2
+m = einops.repeat(t.triu(t.ones(seq, seq)*2), "seq1 seq2 -> b d_model seq1 seq2", 
+                  b=b, d_model=d_model).clone()
+m[m==0] = t.tensor(float("-inf"))
+# %%
+m[0, 0, :, :]
+# %%
+m
