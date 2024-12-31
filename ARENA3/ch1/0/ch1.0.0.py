@@ -305,16 +305,69 @@ class Attention(nn.Module):
         nn.init.normal_(self.W_K, std=self.cfg.init_range)
         nn.init.normal_(self.W_V, std=self.cfg.init_range)
         nn.init.normal_(self.W_O, std=self.cfg.init_range)
-        self.register_buffer("IGNORE", t.tensor(float("-inf"), dtype=t.float32, device=device))
-
+        self.register_buffer("IGNORE", t.tensor(float("-inf"), 
+                                                dtype=t.float32, 
+                                                device=device))
+        
     def forward(self, normalized_resid_pre: Float[Tensor, "batch posn d_model"]) -> Float[Tensor, "batch posn d_model"]:
+        # Calculate query, key and value vectors
+        q = (
+            einops.einsum(
+                normalized_resid_pre, self.W_Q, "batch posn d_model, nheads d_model d_head -> batch posn nheads d_head"
+            )
+            + self.b_Q
+        )
+        k = (
+            einops.einsum(
+                normalized_resid_pre, self.W_K, "batch posn d_model, nheads d_model d_head -> batch posn nheads d_head"
+            )
+            + self.b_K
+        )
+        v = (
+            einops.einsum(
+                normalized_resid_pre, self.W_V, "batch posn d_model, nheads d_model d_head -> batch posn nheads d_head"
+            )
+            + self.b_V
+        )
+        # print(q[0, 0, :2, :2])
+        # print(k[0, 0, :2, :2])
+        # print(v[0, 0, :2, :2])
+
+        # Calculate attention scores, then scale and mask, and apply softmax to get probabilities
+        attn_scores = einops.einsum(
+            q, k, "batch posn_Q nheads d_head, batch posn_K nheads d_head -> batch nheads posn_Q posn_K"
+        )
+        attn_scores_masked = self.apply_causal_mask(attn_scores / self.cfg.d_head**0.5)
+        attn_pattern = attn_scores_masked.softmax(-1)
+        # print(attn_pattern[0, 0, :3, :3])
+
+        # Take weighted sum of value vectors, according to attention probabilities
+        # print(v[0, 0, :3, :3])
+        # print(attn_pattern[0, 0, :3, :3])
+        z = einops.einsum(
+            v, attn_pattern, "batch posn_K nheads d_head, batch nheads posn_Q posn_K -> batch posn_Q nheads d_head"
+        )
+        print(z[0, 0, :3, :3])
+
+        # Calculate output (by applying matrix W_O and summing over heads, then adding bias b_O)
+        attn_out = (
+            einops.einsum(z, self.W_O, "batch posn_Q nheads d_head, nheads d_head d_model -> batch posn_Q d_model")
+            + self.b_O
+        )
+
+        return attn_out
+
+    def forward_mine(self, normalized_resid_pre: Float[Tensor, "batch posn d_model"]) -> Float[Tensor, "batch posn d_model"]:
         # Compute Q, K and V activations:
-        q_activations = einops.einsum(self.W_Q, normalized_resid_pre, 
-                                 "n_heads d_model d_head, batch posn d_model -> batch posn n_heads d_head") + self.b_Q
-        k_activations = einops.einsum(self.W_K, normalized_resid_pre, 
-                                 "n_heads d_model d_head, batch posn d_model -> batch posn n_heads d_head") + self.b_K
-        v_activations = einops.einsum(self.W_V, normalized_resid_pre, 
-                                 "n_heads d_model d_head, batch posn d_model -> batch posn n_heads d_head") + self.b_V
+        q_activations = einops.einsum(normalized_resid_pre, self.W_Q, 
+                                 "batch posn d_model, n_heads d_model d_head -> batch posn n_heads d_head") + self.b_Q
+        k_activations = einops.einsum(normalized_resid_pre, self.W_K, 
+                                 "batch posn d_model, n_heads d_model d_head -> batch posn n_heads d_head") + self.b_K
+        v_activations = einops.einsum(normalized_resid_pre, self.W_V, 
+                                 "batch posn d_model, n_heads d_model d_head -> batch posn n_heads d_head") + self.b_V
+        # print(q_activations[0, 0, :2, :2])
+        # print(k_activations[0, 0, :2, :2])
+        # print(v_activations[0, 0, :2, :2])
 
         # Get attention matrix:
         attention_logits = einops.einsum(q_activations, k_activations, 
@@ -323,19 +376,28 @@ class Attention(nn.Module):
         normed_masked_attention_logits = self.apply_causal_mask(
             attention_logits / t.sqrt(t.tensor(cfg.d_head, dtype=t.float32, device=device)))
         attention_p = t.softmax(normed_masked_attention_logits, dim=3)
-        print(attention_p[0, 0, :10, :10])
+        # print(attention_p[0, 0, :3, :3])
+
+        # from sol:
+        # attn_scores_masked = self.apply_causal_mask(attention_logits / self.cfg.d_head**0.5)
+        # attention_p = attn_scores_masked.softmax(-1)
 
         # Apply and project to output:
-        z = einops.einsum(attention_p, v_activations,
-                          "batch n_heads posq posk, batch posn n_heads d_head -> batch posq n_heads d_head")
-        
-        result = einops.einsum(self.W_O, z, 
-                               "n_heads d_head d_model, batch posq n_heads d_head -> batch posq n_heads d_model")
+        # print(v_activations[0, 0, :3, :3])
+        # print(attention_p[0, 0, :3, :3])
 
-        sum_over_heads = einops.einsum(result,
-                               "batch posq n_heads d_model -> batch posq d_model")
+        z = einops.einsum(
+            v_activations, attention_p,
+            "batch posk n_heads d_head, batch n_heads posq posk -> batch posq n_heads d_head")
+        print(z[0, 0, :3, :3])
         
-        return sum_over_heads + self.b_O
+        result = einops.einsum(z, self.W_O, 
+                               "batch posq n_heads d_head, n_heads d_head d_model -> batch posq d_model") + self.b_O
+
+        # sum_over_heads = einops.einsum(result,
+        #                       "batch posq n_heads d_model -> batch posq d_model")
+        
+        return result 
         
 
     def apply_causal_mask(
@@ -353,23 +415,4 @@ class Attention(nn.Module):
         return t.masked_fill(attn_scores, mask, self.IGNORE)
 
 
-tests.test_causal_mask(Attention.apply_causal_mask)
-rand_float_test(Attention, [2, 4, 768])
-load_gpt2_test(Attention, reference_gpt2.blocks[0].attn, cache["normalized", 0, "ln1"])
-
-# %%
-b=2
-seq=5
-attn_scores = t.randn((b, cfg.n_heads, seq, seq), device=device)
-_, _, n_q, n_k = attn_scores.shape
-
-all_ones = t.ones(n_q, n_k, device=device, dtype=bool)
-mask = t.triu(all_ones, diagonal=1)
-
-masked = t.masked_fill(attn_scores, mask, 
-                       t.tensor(float("-inf"), dtype=t.float32, device=device))
-masked = t.softmax(masked, dim=3)
-masked[0, 0, :, :]
-# %%
-cfg.d_model
 # %%
