@@ -527,16 +527,34 @@ class TransformerBlock(nn.Module):
         self.mlp = MLP(cfg)
 
     def forward(self, resid_pre: Float[Tensor, "batch position d_model"]) -> Float[Tensor, "batch position d_model"]:
-        normalized_attn = self.ln1(resid_pre)
-        attn_val = self.attn(normalized_attn)
-        post_attn = attn_val + resid_pre
+        post_attn = self.attn(self.ln1(resid_pre)) + resid_pre
+        post_mlp = self.mlp(self.ln2(post_attn))
 
-        normalized_mlp = self.ln2(post_attn)
-        mlp_val = self.mlp(normalized_mlp)
-
-        return post_attn + mlp_val
+        return post_attn + post_mlp
 
 
 rand_float_test(TransformerBlock, [2, 4, 768])
 load_gpt2_test(TransformerBlock, reference_gpt2.blocks[0], cache["resid_pre", 0])
+# %%
+
+class Unembed(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.W_U = nn.Parameter(t.empty((cfg.d_model, cfg.d_vocab)))
+        nn.init.normal_(self.W_U, std=self.cfg.init_range)
+
+        self.b_U = nn.Parameter(t.zeros((cfg.d_vocab), requires_grad=False))
+
+    def forward(
+        self, normalized_resid_final: Float[Tensor, "batch position d_model"]
+    ) -> Float[Tensor, "batch position d_vocab"]:
+        
+        return einops.einsum(normalized_resid_final, self.W_U, 
+                      "batch position d_model, d_model d_vocab -> batch position d_vocab") + self.b_U
+
+
+rand_float_test(Unembed, [2, 4, 768])
+load_gpt2_test(Unembed, reference_gpt2.unembed, cache["ln_final.hook_normalized"])
+
 # %%
