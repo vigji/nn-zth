@@ -517,3 +517,26 @@ einops.einsum(
     "batch posn d_model, d_mlp d_model -> batch posn d_mlp",
 )
 # %%
+class TransformerBlock(nn.Module):
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.cfg = cfg
+        self.ln1 = LayerNorm(cfg)
+        self.attn = Attention(cfg)
+        self.ln2 = LayerNorm(cfg)
+        self.mlp = MLP(cfg)
+
+    def forward(self, resid_pre: Float[Tensor, "batch position d_model"]) -> Float[Tensor, "batch position d_model"]:
+        normalized_attn = self.ln1(resid_pre)
+        attn_val = self.attn(normalized_attn)
+        post_attn = attn_val + resid_pre
+
+        normalized_mlp = self.ln2(post_attn)
+        mlp_val = self.mlp(normalized_mlp)
+
+        return post_attn + mlp_val
+
+
+rand_float_test(TransformerBlock, [2, 4, 768])
+load_gpt2_test(TransformerBlock, reference_gpt2.blocks[0], cache["resid_pre", 0])
+# %%
