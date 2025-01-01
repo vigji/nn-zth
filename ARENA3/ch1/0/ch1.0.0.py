@@ -381,7 +381,6 @@ class Attention(nn.Module):
             attn_pattern,
             "batch posn_K nheads d_head, batch nheads posn_Q posn_K -> batch posn_Q nheads d_head",
         )
-        print(z[0, 0, :3, :3])
 
         # Calculate output (by applying matrix W_O and summing over heads, then adding bias b_O)
         attn_out = (
@@ -557,4 +556,51 @@ class Unembed(nn.Module):
 rand_float_test(Unembed, [2, 4, 768])
 load_gpt2_test(Unembed, reference_gpt2.unembed, cache["ln_final.hook_normalized"])
 
+# %%
+
+class DemoTransformer(nn.Module):
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.cfg = cfg
+        self.embed = Embed(cfg)
+        self.pos_embed = PosEmbed(cfg)
+        self.blocks = nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)])
+        self.ln_final = LayerNorm(cfg)
+        self.unembed = Unembed(cfg)
+
+    def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_vocab"]:
+        embedded = self.embed(tokens)
+        pos_embedded = self.pos_embed(tokens)
+
+        transformer_input = embedded + pos_embedded
+        for trasf_block in self.blocks:
+            transformer_input = trasf_block(transformer_input)
+
+        return self.unembed(self.ln_final(transformer_input))
+
+
+rand_int_test(DemoTransformer, [2, 4])
+load_gpt2_test(DemoTransformer, reference_gpt2, tokens)
+# %%
+tokens = reference_gpt2.to_tokens("This is an example text consisting of")
+
+demo_gpt = DemoTransformer(cfg=cfg).to(device)
+demo_gpt.load_state_dict(reference_gpt2.state_dict(), strict=False)
+
+# %%
+demo_logits = demo_gpt(tokens)
+log_softmax = demo_logits.log_softmax(dim=-1)
+# %%
+# Compute a cross-entropy loss
+# CE loss: - sum_x(p(x)*log(q(x)))
+# p(x) is 0 everywhere and 1 at token position so
+# - sum_x(log(q(x)))
+# For each value we look at its prediction:
+token_log_probs = log_softmax[0, t.arange(7), tokens[0][1:]]
+cross_entropy_loss = -token_log_probs.mean()
+print("Cross entropy loss: ", cross_entropy_loss)
+uniform_entropy = math.log(cfg.d_vocab)
+print("Uniform: ", uniform_entropy)
+avg_p_correct = token_log_probs.exp().mean()
+print("Average p: ", avg_p_correct)
 # %%
