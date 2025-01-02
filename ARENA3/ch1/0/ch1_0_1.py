@@ -388,7 +388,7 @@ model = DemoTransformer(model_cfg)
 class TransformerTrainingArgs:
     batch_size = 16
     epochs = 20
-    max_steps_per_epoch = 200
+    max_steps_per_epoch = 10
     lr = 1e-3
     weight_decay = 1e-2
     use_wandb = False
@@ -415,10 +415,10 @@ tokenized_dataset = tokenize_and_concatenate(
 
 dataset_dict = tokenized_dataset.train_test_split(test_size=1000)
 train_loader = DataLoader(
-    dataset_dict["train"], batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True
+    dataset_dict["train"], batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=True
 )
 test_loader = DataLoader(
-    dataset_dict["test"], batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True
+    dataset_dict["test"], batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=True
 )
 
 # %%
@@ -433,14 +433,25 @@ class TransformerTrainer:
         self.model = model
         self.args = args
 
-        self.optimizer = t.optim.AdamW(self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        self.optimizer = t.optim.AdamW(self.model.parameters(), 
+                                       lr=args.lr, 
+                                       weight_decay=args.weight_decay)
         self.step = 0
 
+        n_workers = 0
         self.train_loader = DataLoader(
-            dataset_dict["train"], batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True
+            dataset_dict["train"], 
+            batch_size=args.batch_size, 
+            shuffle=True, 
+            num_workers=n_workers, 
+            pin_memory=True,
         )
         self.test_loader = DataLoader(
-            dataset_dict["test"], batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True
+            dataset_dict["test"], 
+            batch_size=args.batch_size, 
+            shuffle=False, 
+            num_workers=n_workers, 
+            pin_memory=True,
         )
 
     def training_step(self, batch: dict[str, Int[Tensor, "batch seq"]]) -> Float[Tensor, ""]:
@@ -449,8 +460,20 @@ class TransformerTrainer:
 
         Remember that `batch` is a dictionary with the single key 'tokens'.
         """
-        # raise NotImplementedError()
-        predictions = 
+        self.optimizer.zero_grad()
+
+        tokens = batch["tokens"].to(device)
+        demo_logits = self.model(tokens)
+        log_softmax = demo_logits.log_softmax(dim=-1)
+
+        gathered_probs = log_softmax.gather(2, 
+                                            tokens[:, 1:].unsqueeze(-1)).squeeze(-1)
+
+        loss = -gathered_probs.mean()
+
+        loss.backward()
+        self.optimizer.step()
+
         return loss
 
     @t.inference_mode()
@@ -458,7 +481,18 @@ class TransformerTrainer:
         """
         Evaluate the model on the test set and return the accuracy.
         """
-        raise NotImplementedError()
+        n_matches = 0
+        total_n = 0 
+
+        for batch in self.test_loader:
+            tokens = batch["tokens"].to(device)
+            logits = model(tokens)
+            prediction = logits.argmax(2)
+
+            n_matches += (prediction[:, :-1] == tokens[:, 1:]).sum()
+            total_n += prediction[:, :-1].numel()
+        
+        accuracy = n_matches / total_n
         return accuracy
 
     def train(self):
@@ -475,6 +509,7 @@ class TransformerTrainer:
 
         for epoch in range(self.args.epochs):
             for i, batch in enumerate(self.train_loader):
+                # print(batch["tokens"].device)
                 loss = self.training_step(batch)
                 progress_bar.update()
                 progress_bar.set_description(f"Epoch {epoch+1}, loss: {loss:.3f}, accuracy: {accuracy:.3f}")
@@ -486,9 +521,34 @@ class TransformerTrainer:
         if self.args.use_wandb:
             wandb.finish()
 
-
-# See the full run here: https://api.wandb.ai/links/callum-mcdougall/4xtin05h
 model = DemoTransformer(model_cfg).to(device)
+args = TransformerTrainingArgs()
+trainer = TransformerTrainer(args, model)
+trainer.train()
+# %%
+test_loader = DataLoader(
+    dataset_dict["test"], batch_size=args.batch_size, 
+    shuffle=False, num_workers=0, pin_memory=True
+)
+
+model = DemoTransformer(model_cfg).to(device)
+
+for i, batch in enumerate(test_loader):
+    logits = model(batch["tokens"])
+    log_softmax = logits.log_softmax(dim=-1)
+    if i == 0:
+        break
+# See the full run here: https://api.wandb.ai/links/callum-mcdougall/4xtin05h
+
+# %%
+prediction = logits.argmax(2)
+prediction[:, :-1].shape
+# %%
+batch["tokens"].shape
+
+# %%
+(prediction[:, :-1] == batch["tokens"][:, 1:].to(device)).sum() / prediction[:, :-1].numel()
+# %%
 args = TransformerTrainingArgs()
 trainer = TransformerTrainer(args, model)
 trainer.train()

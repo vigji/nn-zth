@@ -605,7 +605,12 @@ log_softmax[0, t.arange(seq_len), tokens[0, 1:]]
 # %%
 token_log_probs
 # %%
-log_softmax.shape  # batch, seq_length, vocab
+print(log_softmax.shape, tokens.shape)
 # %%
-tokens.shape  # batch, seq_length; values in vocab
+# add final dimension to match log_softmax:
+tokens.unsqueeze(-1)[:].shape
 
+# %%
+gathered_probs = log_softmax.gather(2, tokens[:, 1:].unsqueeze(-1)).squeeze(-1)
+
+# %%
