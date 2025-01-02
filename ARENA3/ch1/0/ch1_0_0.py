@@ -510,12 +510,7 @@ class MLP(nn.Module):
 rand_float_test(MLP, [2, 4, 768])
 load_gpt2_test(MLP, reference_gpt2.blocks[0].mlp, cache["normalized", 0, "ln2"])
 # %%
-einops.einsum(
-    t.ones(2, 4, 768),
-    t.ones(768),
-    "batch posn d_model, d_mlp d_model -> batch posn d_mlp",
-)
-# %%
+
 class TransformerBlock(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -604,3 +599,13 @@ print("Uniform: ", uniform_entropy)
 avg_p_correct = token_log_probs.exp().mean()
 print("Average p: ", avg_p_correct)
 # %%
+seq_len = tokens.size(1) - 1
+log_softmax[0, t.arange(seq_len), tokens[0, 1:]]
+
+# %%
+token_log_probs
+# %%
+log_softmax.shape  # batch, seq_length, vocab
+# %%
+tokens.shape  # batch, seq_length; values in vocab
+
