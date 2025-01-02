@@ -388,10 +388,10 @@ model = DemoTransformer(model_cfg)
 class TransformerTrainingArgs:
     batch_size = 16
     epochs = 20
-    max_steps_per_epoch = 10
+    max_steps_per_epoch = 100
     lr = 1e-3
     weight_decay = 1e-2
-    use_wandb = False
+    use_wandb = True
     wandb_project: str | None = "day1-demotransformer"
     wandb_name: str | None = None
 
@@ -474,6 +474,9 @@ class TransformerTrainer:
         loss.backward()
         self.optimizer.step()
 
+        wandb.log(dict(loss=loss), step=self.step)
+        self.step += 1
+
         return loss
 
     @t.inference_mode()
@@ -493,6 +496,9 @@ class TransformerTrainer:
             total_n += prediction[:, :-1].numel()
         
         accuracy = n_matches / total_n
+
+        wandb.log(dict(loss=accuracy), step=self.step)
+
         return accuracy
 
     def train(self):
@@ -509,7 +515,7 @@ class TransformerTrainer:
 
         for epoch in range(self.args.epochs):
             for i, batch in enumerate(self.train_loader):
-                # print(batch["tokens"].device)
+
                 loss = self.training_step(batch)
                 progress_bar.update()
                 progress_bar.set_description(f"Epoch {epoch+1}, loss: {loss:.3f}, accuracy: {accuracy:.3f}")
