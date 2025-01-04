@@ -386,18 +386,19 @@ model = DemoTransformer(model_cfg)
 
 @dataclass
 class TransformerTrainingArgs:
-    batch_size = 16
-    epochs = 20
-    max_steps_per_epoch = 100
-    lr = 1e-3
-    weight_decay = 1e-2
-    use_wandb = True
+    batch_size: int = 16
+    epochs: int = 20
+    max_steps_per_epoch: int = 100
+    lr: float = 1e-3
+    weight_decay: float = 1e-2
+    use_wandb: bool = True
     wandb_project: str | None = "day1-demotransformer"
     wandb_name: str | None = None
 
 
-args = TransformerTrainingArgs()
-
+args = TransformerTrainingArgs(batch_size=16, 
+                               epochs=100, 
+                               max_steps_per_epoch=200)
 # %%
 dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
 print(dataset)
@@ -497,7 +498,7 @@ class TransformerTrainer:
         
         accuracy = n_matches / total_n
 
-        wandb.log(dict(loss=accuracy), step=self.step)
+        wandb.log(dict(accuracy=accuracy), step=self.step)
 
         return accuracy
 
@@ -507,7 +508,11 @@ class TransformerTrainer:
         for each epoch at `self.args.max_steps_per_epoch` steps.
         """
         if self.args.use_wandb:
-            wandb.init(project=self.args.wandb_project, name=self.args.wandb_name, config=self.args)
+            full_config = self.args.__dict__.copy()
+            full_config.update(self.model.cfg.__dict__)
+            wandb.init(project=self.args.wandb_project, 
+                       name=self.args.wandb_name, 
+                       config=full_config)
         
         accuracy = np.nan
 
@@ -527,8 +532,21 @@ class TransformerTrainer:
         if self.args.use_wandb:
             wandb.finish()
 
+model_cfg = Config(
+    debug=False,
+    d_model=512,
+    n_heads=8,
+    d_head=64,
+    d_mlp=1024,
+    n_layers=2, # 2,
+    n_ctx=256,
+    d_vocab=reference_gpt2.cfg.d_vocab,
+)
+args = TransformerTrainingArgs(batch_size=16, 
+                               epochs=100, 
+                               max_steps_per_epoch=200)
+
 model = DemoTransformer(model_cfg).to(device)
-args = TransformerTrainingArgs()
 trainer = TransformerTrainer(args, model)
 trainer.train()
 # %%
@@ -558,3 +576,13 @@ batch["tokens"].shape
 args = TransformerTrainingArgs()
 trainer = TransformerTrainer(args, model)
 trainer.train()
+
+# %%
+a =dict(A=1) 
+b = dict(b="")
+c = a.copy()
+c.update(b)
+print(c, a)
+# %%
+cfg.__dict__
+# %%
