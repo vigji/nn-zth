@@ -370,7 +370,8 @@ class TransformerTrainingArgs:
     wandb_project: str | None = "day1-demotransformer"
     wandb_name: str | None = None
 
-cfg_args = TransformerTrainingArgs()
+cfg = Config()
+cfg_trainer = TransformerTrainingArgs()
 
 dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
 
@@ -378,7 +379,7 @@ tokenized_dataset = tokenize_and_concatenate(
     dataset,
     reference_gpt2.tokenizer,
     streaming=False,
-    max_length=logits.n_ctx,
+    max_length=cfg.n_ctx,
     column_name="text",
     add_bos_token=True,
     num_proc=4,
@@ -386,13 +387,11 @@ tokenized_dataset = tokenize_and_concatenate(
 
 dataset_dict = tokenized_dataset.train_test_split(test_size=1000)
 train_loader = DataLoader(
-    dataset_dict["train"], batch_size=cfg.batch_size, shuffle=True, num_workers=0, pin_memory=True
+    dataset_dict["train"], batch_size=cfg_trainer.batch_size, shuffle=True, num_workers=0, pin_memory=True
 )
 test_loader = DataLoader(
-    dataset_dict["test"], batch_size=cfg.batch_size, shuffle=False, num_workers=0, pin_memory=True
+    dataset_dict["test"], batch_size=cfg_trainer.batch_size, shuffle=False, num_workers=0, pin_memory=True
 )
-
-first_batch = train_loader.dataset[: cfg.batch_size]
 
 ## for predictions:
 def sampling_fn(model: DemoTransformer, prompt: str) -> str:
@@ -520,7 +519,7 @@ class TransformerTrainer:
 # %%
 t.set_grad_enabled(False)  # gradients are not necessary for sampling
 
-model = DemoTransformer(Config()).to(device)
+model = DemoTransformer(cfg).to(device)
 model.load_state_dict(reference_gpt2.state_dict(), strict=False)
 tokenizer = reference_gpt2.tokenizer
 # %%
@@ -539,8 +538,24 @@ class TransformerSampler:
         Sampling terminates at max_tokens_generated, or when the model generates an end-of-sequence token. kwargs are
         passed to sample_next_token, to give detailed instructions on how new tokens are chosen.
         """
-        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("A noisy cat"))
-        token_ids = t.tensor(token_ids).unsqueeze(0)
+        token_ids = t.tensor(self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(prompt)))
+        
+        for _ in range(max_tokens_generated):
+            logits = model(token_ids.unsqueeze(0))
+            next_token = self.sample_next_token(token_ids, logits, **kwargs)
+
+
+            if next_token == self.tokenizer.eos_token_id:
+                break
+
+            token_ids = t.concatenate([token_ids, t.tensor([next_token])])
+            
+            output = self.tokenizer.convert_ids_to_tokens(token_ids)
+            output = "".join(output).replace("Ġ", " ")
+            if verbose:
+                print(output)
+        
+        return output
 
     @staticmethod
     def sample_next_token(
@@ -581,7 +596,7 @@ class TransformerSampler:
         """
         Returns the most likely token (as an int).
         """
-        return logits.argmax().item()
+        return logits[0, -1, :].argmax().item()
 
     @staticmethod
     def apply_temperature(logits: Float[Tensor, "d_vocab"], temperature: float) -> Float[Tensor, "d_vocab"]:
