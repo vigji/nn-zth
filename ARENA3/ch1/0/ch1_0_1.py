@@ -428,8 +428,16 @@ first_batch = train_loader.dataset[: args.batch_size]
 print(first_batch.keys())
 print(first_batch["tokens"].shape)
 # %%
+## for predictions:
+def sampling_fn(model: DemoTransformer, prompt: str) -> str:
+    sampler = solutions.TransformerSampler(model, reference_gpt2.tokenizer)
+    output = sampler.sample(prompt, temperature=0.7, top_p=0.95, max_tokens_generated=16)
+    return output
+
 class TransformerTrainer:
-    def __init__(self, args: TransformerTrainingArgs, model: DemoTransformer):
+    def __init__(self, args: TransformerTrainingArgs, 
+                 model: DemoTransformer,
+                 prompt = None):
         super().__init__()
         self.model = model
         self.args = args
@@ -454,6 +462,8 @@ class TransformerTrainer:
             num_workers=n_workers, 
             pin_memory=True,
         )
+
+        self.prompt = None
 
     def training_step(self, batch: dict[str, Int[Tensor, "batch seq"]]) -> Float[Tensor, ""]:
         """
@@ -518,6 +528,7 @@ class TransformerTrainer:
 
         progress_bar = tqdm(total=self.args.max_steps_per_epoch * self.args.epochs)
 
+        inferences_list = []
         for epoch in range(self.args.epochs):
             for i, batch in enumerate(self.train_loader):
 
@@ -529,12 +540,20 @@ class TransformerTrainer:
 
             accuracy = self.evaluate()
 
+            if self.prompt is not None:
+                sampled = sampling_fn(model, prompt="John and Mary went to the")
+                
+                inferences_list.append[self.step, epoch, sampled]
+                
+                wandb.Table(columns=["step", "epoch", "text"],
+                            data=inferences_list)
         if self.args.use_wandb:
             wandb.finish()
 
+# %%
 model_cfg = Config(
     debug=False,
-    d_model=512,
+    d_model=256,
     n_heads=8,
     d_head=64,
     d_mlp=1024,
@@ -543,46 +562,32 @@ model_cfg = Config(
     d_vocab=reference_gpt2.cfg.d_vocab,
 )
 args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=100, 
-                               max_steps_per_epoch=200)
+                               epochs=4000, 
+                               max_steps_per_epoch=5)
 
 model = DemoTransformer(model_cfg).to(device)
 trainer = TransformerTrainer(args, model)
 trainer.train()
+
+
 # %%
-test_loader = DataLoader(
-    dataset_dict["test"], batch_size=args.batch_size, 
-    shuffle=False, num_workers=0, pin_memory=True
+# add predictions:
+model_cfg = Config(
+    debug=False,
+    d_model=256,
+    n_heads=8,
+    d_head=64,
+    d_mlp=1024,
+    n_layers=2, # 2,
+    n_ctx=256,
+    d_vocab=reference_gpt2.cfg.d_vocab,
 )
+args = TransformerTrainingArgs(batch_size=16, 
+                               epochs=4000, 
+                               max_steps_per_epoch=5)
 
 model = DemoTransformer(model_cfg).to(device)
-
-for i, batch in enumerate(test_loader):
-    logits = model(batch["tokens"])
-    log_softmax = logits.log_softmax(dim=-1)
-    if i == 0:
-        break
-# See the full run here: https://api.wandb.ai/links/callum-mcdougall/4xtin05h
-
-# %%
-prediction = logits.argmax(2)
-prediction[:, :-1].shape
-# %%
-batch["tokens"].shape
-
-# %%
-(prediction[:, :-1] == batch["tokens"][:, 1:].to(device)).sum() / prediction[:, :-1].numel()
-# %%
-args = TransformerTrainingArgs()
-trainer = TransformerTrainer(args, model)
+trainer = TransformerTrainer(args, model,
+                             prompt="The house was built on")
 trainer.train()
-
-# %%
-a =dict(A=1) 
-b = dict(b="")
-c = a.copy()
-c.update(b)
-print(c, a)
-# %%
-cfg.__dict__
 # %%
