@@ -364,25 +364,6 @@ class DemoTransformer(nn.Module):
 
         return self.unembed(self.ln_final(transformer_input))
 
-# %%
-########################
-# Training a Tranformer!
-########################
-
-
-cfg = Config()
-
-model_cfg = Config(
-    debug=False,
-    d_model=256,
-    n_heads=4,
-    d_head=64,
-    d_mlp=1024,
-    n_layers=2,
-    n_ctx=256,
-    d_vocab=reference_gpt2.cfg.d_vocab,
-)
-model = DemoTransformer(model_cfg)
 
 @dataclass
 class TransformerTrainingArgs:
@@ -395,20 +376,15 @@ class TransformerTrainingArgs:
     wandb_project: str | None = "day1-demotransformer"
     wandb_name: str | None = None
 
+cfg = TransformerTrainingArgs()
 
-args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=100, 
-                               max_steps_per_epoch=200)
-# %%
 dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
-print(dataset)
-print(dataset[0]["text"][:100])
-# %%
+
 tokenized_dataset = tokenize_and_concatenate(
     dataset,
     reference_gpt2.tokenizer,
     streaming=False,
-    max_length=model.cfg.n_ctx,
+    max_length=cfg.n_ctx,
     column_name="text",
     add_bos_token=True,
     num_proc=4,
@@ -416,18 +392,14 @@ tokenized_dataset = tokenize_and_concatenate(
 
 dataset_dict = tokenized_dataset.train_test_split(test_size=1000)
 train_loader = DataLoader(
-    dataset_dict["train"], batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=True
+    dataset_dict["train"], batch_size=cfg.batch_size, shuffle=True, num_workers=0, pin_memory=True
 )
 test_loader = DataLoader(
-    dataset_dict["test"], batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=True
+    dataset_dict["test"], batch_size=cfg.batch_size, shuffle=False, num_workers=0, pin_memory=True
 )
 
-# %%
-first_batch = train_loader.dataset[: args.batch_size]
+first_batch = train_loader.dataset[: cfg.batch_size]
 
-print(first_batch.keys())
-print(first_batch["tokens"].shape)
-# %%
 ## for predictions:
 def sampling_fn(model: DemoTransformer, prompt: str) -> str:
     sampler = solutions.TransformerSampler(model, reference_gpt2.tokenizer)
@@ -489,7 +461,6 @@ class TransformerTrainer:
 
         wandb.log(dict(loss=loss), step=self.step)
         
-
         return loss
 
     @t.inference_mode()
@@ -546,7 +517,6 @@ class TransformerTrainer:
                 sampled = [sampling_fn(model, prompt=prompt) for prompt in self.prompt_list]
                 
                 inferences_list.append([self.step, epoch, ] + sampled)
-                
                 inf_table = wandb.Table(columns=["step", "epoch", ] + [f"text{i}" for i in range(len(sampled))],
                                         data=inferences_list)
                 wandb.log(data=dict(table=inf_table))
@@ -554,6 +524,7 @@ class TransformerTrainer:
             wandb.finish()
 
 # %%
+
 model_cfg = Config(
     debug=False,
     d_model=256,
