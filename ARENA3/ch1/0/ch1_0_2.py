@@ -538,8 +538,8 @@ class TransformerSampler:
         Sampling terminates at max_tokens_generated, or when the model generates an end-of-sequence token. kwargs are
         passed to sample_next_token, to give detailed instructions on how new tokens are chosen.
         """
-        token_ids = t.tensor(self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(prompt)))
-        
+        token_ids = self.tokenizer.encode(prompt,return_tensors="pt")[0]
+        print(token_ids.shape)
         for _ in range(max_tokens_generated):
             logits = model(token_ids.unsqueeze(0))
             next_token = self.sample_next_token(token_ids, logits, **kwargs)
@@ -550,8 +550,7 @@ class TransformerSampler:
 
             token_ids = t.concatenate([token_ids, t.tensor([next_token])])
             
-            output = self.tokenizer.convert_ids_to_tokens(token_ids)
-            output = "".join(output).replace("Ġ", " ")
+            output = self.tokenizer.decode(token_ids) 
             if verbose:
                 print(output)
         
@@ -670,7 +669,10 @@ tokenizer.tokenize("A noisy cat")
 ?tokenizer.tokenize
 # %%
 token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("A noisy cat"))
-token_ids = t.tensor(token_ids).unsqueeze(0)
+token_ids# = t.tensor(token_ids).unsqueeze(0)
+# %%
+tokenizer.encode("A noisy cat")
+# %%
 logits = model(token_ids)
 greedy_max = logits[:, -1, :].argmax(3)
 # t.concatenate([token_ids, t.tensor([[3]])], axis=1)
