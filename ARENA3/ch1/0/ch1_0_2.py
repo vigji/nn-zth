@@ -542,8 +542,9 @@ class TransformerSampler:
         print(token_ids.shape)
         for _ in range(max_tokens_generated):
             logits = model(token_ids.unsqueeze(0))
-            next_token = self.sample_next_token(token_ids, logits, **kwargs)
-
+            next_token = self.sample_next_token(token_ids, 
+                                                logits[0, -1, :], 
+                                                **kwargs)
 
             if next_token == self.tokenizer.eos_token_id:
                 break
@@ -595,7 +596,7 @@ class TransformerSampler:
         """
         Returns the most likely token (as an int).
         """
-        return logits[0, -1, :].argmax().item()
+        return logits.argmax().item()
 
     @staticmethod
     def apply_temperature(logits: Float[Tensor, "d_vocab"], temperature: float) -> Float[Tensor, "d_vocab"]:
@@ -618,7 +619,8 @@ class TransformerSampler:
         """
         Samples from the distribution defined by the logits.
         """
-        raise NotImplementedError()
+        dist = t.distributions.categorical.Categorical(logits=logits)
+        return dist.sample().item()
 
     @staticmethod
     def sample_top_k(logits: Float[Tensor, "d_vocab"], k: int) -> int:
@@ -664,20 +666,26 @@ assert output == expected
 
 print("Tests passed!")
 # %%.
-tokenizer.tokenize("A noisy cat")
+prompt = "John and Mary went to the"
+input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+logits = model(input_ids)[0, -1]
+
+expected_top_5 = {" church": 0.0648, " house": 0.0367, " temple": 0.0145, " same": 0.0104, " Church": 0.0097}
+frequency_of_top_5 = defaultdict(int)
+
+N = 10_000
+for _ in tqdm(range(N)):
+    token = TransformerSampler.sample_next_token(input_ids.squeeze(), logits)
+    frequency_of_top_5[tokenizer.decode(token)] += 1
+
+for word in expected_top_5:
+    expected_freq = expected_top_5[word]
+    observed_freq = frequency_of_top_5[word] / N
+    print(f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}")
+    assert abs(observed_freq - expected_freq) < 0.01, "Try increasing N if this fails by a small amount."
+
+print("Tests passed!")
 # %%
-?tokenizer.tokenize
-# %%
-token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("A noisy cat"))
-token_ids# = t.tensor(token_ids).unsqueeze(0)
-# %%
-tokenizer.encode("A noisy cat")
-# %%
-logits = model(token_ids)
-greedy_max = logits[:, -1, :].argmax(3)
-# t.concatenate([token_ids, t.tensor([[3]])], axis=1)
-# %%
-token_ids.shape
-# %%
-t.tensor([[3]]).shape
+dist = t.distributions.categorical.Categorical(logits=t.tensor([1,2,3]))
+dist.sample().item()
 # %%
