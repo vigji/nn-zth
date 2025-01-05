@@ -82,8 +82,6 @@ class LayerNorm(nn.Module):
     def forward(
         self, residual: Float[Tensor, "batch posn d_model"]
     ) -> Float[Tensor, "batch posn d_model"]:
-        if self.cfg.debug:
-            print("residual shape: ", residual.shape)
 
         means = t.mean(residual, axis=-1, keepdim=True)
         vars = t.var(residual, axis=-1, keepdim=True, unbiased=False)
@@ -103,8 +101,6 @@ class Embed(nn.Module):
     def forward(
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_model"]:
-        if self.cfg.debug:
-            print("Input shape: ", tokens.shape)
         return self.W_E[tokens, :]
     
 class PosEmbed(nn.Module):
@@ -117,8 +113,6 @@ class PosEmbed(nn.Module):
     def forward(
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_model"]:
-        if self.cfg.debug:
-            print("Input shape: ", tokens.shape)
 
         indices = t.stack([t.arange(tokens.shape[1]) for _ in range(tokens.shape[0])])
 
@@ -376,7 +370,7 @@ class TransformerTrainingArgs:
     wandb_project: str | None = "day1-demotransformer"
     wandb_name: str | None = None
 
-cfg = TransformerTrainingArgs()
+cfg_args = TransformerTrainingArgs()
 
 dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
 
@@ -384,7 +378,7 @@ tokenized_dataset = tokenize_and_concatenate(
     dataset,
     reference_gpt2.tokenizer,
     streaming=False,
-    max_length=cfg.n_ctx,
+    max_length=logits.n_ctx,
     column_name="text",
     add_bos_token=True,
     num_proc=4,
@@ -524,44 +518,149 @@ class TransformerTrainer:
             wandb.finish()
 
 # %%
+t.set_grad_enabled(False)  # gradients are not necessary for sampling
 
-model_cfg = Config(
-    debug=False,
-    d_model=256,
-    n_heads=8,
-    d_head=64,
-    d_mlp=1024,
-    n_layers=2, # 2,
-    n_ctx=256,
-    d_vocab=reference_gpt2.cfg.d_vocab,
-)
-args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=4000, 
-                               max_steps_per_epoch=5)
-
-model = DemoTransformer(model_cfg).to(device)
-trainer = TransformerTrainer(args, model)
-trainer.train()
-
-
+model = DemoTransformer(Config()).to(device)
+model.load_state_dict(reference_gpt2.state_dict(), strict=False)
+tokenizer = reference_gpt2.tokenizer
 # %%
-# add predictions:
-model_cfg = Config(
-    debug=False,
-    d_model=256*4,
-    n_heads=8,
-    d_head=64,
-    d_mlp=1024,
-    n_layers=2, # 2,
-    n_ctx=256,
-    d_vocab=reference_gpt2.cfg.d_vocab,
-)
-args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=4000, 
-                               max_steps_per_epoch=100)
 
-model = DemoTransformer(model_cfg).to(device)
-trainer = TransformerTrainer(args, model,
-                             prompt_list=["The house was built on", "John and Mary went to the"])
-trainer.train()
+class TransformerSampler:
+    def __init__(self, model: DemoTransformer, tokenizer: GPT2TokenizerFast):
+        self.model = model
+        self.cfg = model.cfg
+        self.tokenizer = tokenizer
+
+    @t.inference_mode()
+    def sample(self, prompt: str, max_tokens_generated=100, verbose=False, **kwargs):
+        """
+        Returns a string of autoregressively generated text, starting from the prompt.
+
+        Sampling terminates at max_tokens_generated, or when the model generates an end-of-sequence token. kwargs are
+        passed to sample_next_token, to give detailed instructions on how new tokens are chosen.
+        """
+        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("A noisy cat"))
+        token_ids = t.tensor(token_ids).unsqueeze(0)
+
+    @staticmethod
+    def sample_next_token(
+        input_ids: Int[Tensor, "seq_len"],
+        logits: Float[Tensor, "d_vocab"],
+        temperature=1.0,
+        top_k=0,
+        top_p=0.0,
+        frequency_penalty=0.0,
+        seed=None,
+    ):
+        assert input_ids.ndim == 1, "input_ids should be a 1D sequence of token ids"
+        assert temperature >= 0, "Temperature should be non-negative"
+        assert 0 <= top_p <= 1.0, "Top-p must be a probability"
+        assert 0 <= top_k, "Top-k must be non-negative"
+        assert not (top_p != 0 and top_k != 0), "At most one of top-p and top-k supported"
+
+        # Set random seeds for reproducibility
+        if seed is not None:
+            t.manual_seed(seed)
+            np.random.seed(seed)
+
+        # Apply all the specialized sampling methods
+        if temperature == 0:
+            return TransformerSampler.greedy_search(logits)
+        elif temperature != 1.0:
+            logits = TransformerSampler.apply_temperature(logits, temperature)
+        if frequency_penalty != 0.0:
+            logits = TransformerSampler.apply_frequency_penalty(input_ids, logits, frequency_penalty)
+        if top_k > 0:
+            return TransformerSampler.sample_top_k(logits, top_k)
+        if top_p > 0.0:
+            return TransformerSampler.sample_top_p(logits, top_p)
+        return TransformerSampler.sample_basic(logits)
+
+    @staticmethod
+    def greedy_search(logits: Float[Tensor, "d_vocab"]) -> int:
+        """
+        Returns the most likely token (as an int).
+        """
+        return logits.argmax().item()
+
+    @staticmethod
+    def apply_temperature(logits: Float[Tensor, "d_vocab"], temperature: float) -> Float[Tensor, "d_vocab"]:
+        """
+        Applies temperature scaling to the logits.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    def apply_frequency_penalty(
+        input_ids: Int[Tensor, "seq_len"], logits: Float[Tensor, "d_vocab"], freq_penalty: float
+    ) -> Float[Tensor, "d_vocab"]:
+        """
+        Applies a frequency penalty to the logits.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    def sample_basic(logits: Float[Tensor, "d_vocab"]) -> int:
+        """
+        Samples from the distribution defined by the logits.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    def sample_top_k(logits: Float[Tensor, "d_vocab"], k: int) -> int:
+        """
+        Samples from the top k most likely tokens.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    def sample_top_p(logits: Float[Tensor, "d_vocab"], top_p: float, min_tokens_to_keep: int = 1) -> int:
+        """
+        Samples from the most likely tokens which make up at least p cumulative probability.
+        """
+        raise NotImplementedError()
+
+    @t.inference_mode()
+    def beam_search(
+        self,
+        prompt: str,
+        num_return_sequences: int,
+        num_beams: int,
+        max_new_tokens: int,
+        no_repeat_ngram_size: int | None = None,
+    ) -> list[tuple[float, str]]:
+        """
+        Implements a beam search, by repeatedly performing the `generate` and `filter` steps (starting from the initial
+        prompt) until either of the two stopping criteria are met: (1) we've generated `max_new_tokens` tokens, or (2)
+        we've generated `num_returns_sequences` terminating sequences.
+        """
+        raise NotImplementedError()
+
+
+sampler = TransformerSampler(model, tokenizer)
+
+prompt = "Jingle bells, jingle bells, jingle all the way"
+print(f"Testing greedy decoding\nPrompt:   {prompt!r}")
+
+expected = "Jingle bells, jingle bells, jingle all the way up to the top of the mountain."
+output = sampler.sample(prompt, max_tokens_generated=8, temperature=0.0)
+
+print(f"Expected: {expected!r}\nActual:   {output!r}\n")
+assert output == expected
+
+print("Tests passed!")
+# %%.
+tokenizer.tokenize("A noisy cat")
+# %%
+?tokenizer.tokenize
+# %%
+token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize("A noisy cat"))
+token_ids = t.tensor(token_ids).unsqueeze(0)
+logits = model(token_ids)
+greedy_max = logits[:, -1, :].argmax(3)
+# t.concatenate([token_ids, t.tensor([[3]])], axis=1)
+# %%
+token_ids.shape
+# %%
+t.tensor([[3]]).shape
 # %%
