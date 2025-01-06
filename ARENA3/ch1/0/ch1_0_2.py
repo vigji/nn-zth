@@ -629,20 +629,31 @@ class TransformerSampler:
         """
         Samples from the top k most likely tokens.
         """
-        logits_flat = logits.clone()
-        q_t = t.quantile(logits_flat, (len(logits_flat) - k) / len(logits_flat))
+        top_k_logits, top_k_token_ids = logits.topk(k)
 
-        logits_flat[logits_flat <= q_t] = -t.inf
-
-        dist = t.distributions.categorical.Categorical(logits=logits_flat)
-        return dist.sample().item()
+        new_id = t.distributions.categorical.Categorical(logits=top_k_logits).sample()
+        return top_k_token_ids[new_id].item()
 
     @staticmethod
     def sample_top_p(logits: Float[Tensor, "d_vocab"], top_p: float, min_tokens_to_keep: int = 1) -> int:
         """
         Samples from the most likely tokens which make up at least p cumulative probability.
         """
-        raise NotImplementedError()
+        probs = logits.softmax(-1)
+        sorted_probs, sorted_ids = t.sort(probs, descending=True)
+
+        prob_cumsum = t.cumsum(sorted_probs, 0)
+
+        n_to_take = max((prob_cumsum < top_p).sum().item() + 1, 
+                        min_tokens_to_keep)
+        filtered_probs = sorted_probs[:n_to_take]
+        filtered_ids = sorted_ids[:n_to_take]
+
+        new_id = t.distributions.categorical.Categorical(probs=filtered_probs).sample()
+
+        return filtered_ids[new_id].item()
+
+
 
     @t.inference_mode()
     def beam_search(
@@ -659,6 +670,35 @@ class TransformerSampler:
         we've generated `num_returns_sequences` terminating sequences.
         """
         raise NotImplementedError()
+    
+sampler = TransformerSampler(model, tokenizer)
+
+prompt = "John and Mary went to the"
+input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+logits = model(input_ids)[0, -1]
+
+expected_top_10pct = {
+    " church": 0.0648,
+    " house": 0.0367,  # These are the two most likely tokens, and add up to >10%
+}
+top_10pct_sum = sum(expected_top_10pct.values())
+
+observed_freqs = defaultdict(int)
+
+N = 10_000
+for _ in tqdm(range(N)):
+    token = TransformerSampler.sample_next_token(input_ids.squeeze(), logits, top_p=0.1)
+    observed_freqs[tokenizer.decode(token)] += 1
+
+for word in expected_top_10pct:
+    expected_freq = expected_top_10pct[word] / top_10pct_sum
+    observed_freq = observed_freqs[word] / N
+    print(f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}")
+    print(abs(observed_freq - expected_freq) < 0.01, "Try increasing N if this fails by a small amount.")
+
+# %%
+
+# %%
 
 
 sampler = TransformerSampler(model, tokenizer)
@@ -673,6 +713,7 @@ print(f"Expected: {expected!r}\nActual:   {output!r}\n")
 assert output == expected
 
 print("Tests passed!")
+
 # %%.
 prompt = "John and Mary went to the"
 input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
@@ -760,10 +801,36 @@ for word in expected_top_5:
     expected_freq = expected_top_5[word] / topk_5_sum
     observed_freq = observed_freqs[word] / N
     print(f"Word: {word!r:<9}. Expected freq = {expected_freq:.4f}, observed freq = {observed_freq:.4f}")
-    # assert abs(observed_freq - expected_freq) < 0.01
+    assert abs(observed_freq - expected_freq) < 0.01
 
 # %%
-rnd = t.randn(10000)
-q_t = t.quantile(rnd, / len(rnd))
-rnd[rnd > q_t]
+sampler = TransformerSampler(model, tokenizer)
+
+your_prompt = "In a shocking finding, scientist discovered a herd of unicorns living in a remote, previously unexplored valley, in the Andes Mountains. Even more surprising to the researchers was the fact that the unicorns spoke perfect English."
+
+output = sampler.sample(your_prompt, temperature=0.7, top_k=40, max_tokens_generated=64)
+
+rprint(f"Your model said:\n\n[bold dark_orange]{output}")
 # %%
+prompt = "John and Mary went to the"
+input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+logits = model(input_ids)[0, -1]
+
+expected_top_10pct = {
+    " church": 0.0648,
+    " house": 0.0367,  # These are the two most likely tokens, and add up to >10%
+}
+top_10pct_sum = sum(expected_top_10pct.values())
+
+observed_freqs = defaultdict(int)
+
+N = 5000
+for _ in tqdm(range(N)):
+    token = TransformerSampler.sample_next_token(input_ids.squeeze(), logits, top_p=0.1)
+    observed_freqs[tokenizer.decode(token)] += 1
+
+for word in expected_top_10pct:
+    expected_freq = expected_top_10pct[word] / top_10pct_sum
+    observed_freq = observed_freqs[word] / N
+    print(f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}")
+    assert abs(observed_freq - expected_freq) < 0.01, "Try increasing N if this fails by a small amount."
