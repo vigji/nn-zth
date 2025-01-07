@@ -511,6 +511,7 @@ rand_float_test(MLP, [2, 4, 768])
 load_gpt2_test(MLP, reference_gpt2.blocks[0].mlp, cache["normalized", 0, "ln2"])
 # %%
 
+
 class TransformerBlock(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -520,7 +521,9 @@ class TransformerBlock(nn.Module):
         self.ln2 = LayerNorm(cfg)
         self.mlp = MLP(cfg)
 
-    def forward(self, resid_pre: Float[Tensor, "batch position d_model"]) -> Float[Tensor, "batch position d_model"]:
+    def forward(
+        self, resid_pre: Float[Tensor, "batch position d_model"]
+    ) -> Float[Tensor, "batch position d_model"]:
         post_attn = self.attn(self.ln1(resid_pre)) + resid_pre
         post_mlp = self.mlp(self.ln2(post_attn))
 
@@ -530,6 +533,7 @@ class TransformerBlock(nn.Module):
 rand_float_test(TransformerBlock, [2, 4, 768])
 load_gpt2_test(TransformerBlock, reference_gpt2.blocks[0], cache["resid_pre", 0])
 # %%
+
 
 class Unembed(nn.Module):
     def __init__(self, cfg):
@@ -543,9 +547,15 @@ class Unembed(nn.Module):
     def forward(
         self, normalized_resid_final: Float[Tensor, "batch position d_model"]
     ) -> Float[Tensor, "batch position d_vocab"]:
-        
-        return einops.einsum(normalized_resid_final, self.W_U, 
-                      "batch position d_model, d_model d_vocab -> batch position d_vocab") + self.b_U
+
+        return (
+            einops.einsum(
+                normalized_resid_final,
+                self.W_U,
+                "batch position d_model, d_model d_vocab -> batch position d_vocab",
+            )
+            + self.b_U
+        )
 
 
 rand_float_test(Unembed, [2, 4, 768])
@@ -553,17 +563,22 @@ load_gpt2_test(Unembed, reference_gpt2.unembed, cache["ln_final.hook_normalized"
 
 # %%
 
+
 class DemoTransformer(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
         self.embed = Embed(cfg)
         self.pos_embed = PosEmbed(cfg)
-        self.blocks = nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)])
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(cfg) for _ in range(cfg.n_layers)]
+        )
         self.ln_final = LayerNorm(cfg)
         self.unembed = Unembed(cfg)
 
-    def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_vocab"]:
+    def forward(
+        self, tokens: Int[Tensor, "batch position"]
+    ) -> Float[Tensor, "batch position d_vocab"]:
         embedded = self.embed(tokens)
         pos_embedded = self.pos_embed(tokens)
 

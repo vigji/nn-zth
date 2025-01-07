@@ -59,6 +59,7 @@ reference_gpt2 = HookedTransformer.from_pretrained(
 # %%
 # Building blocks for transformer:
 
+
 @dataclass
 class Config:
     d_model: int = 768
@@ -71,6 +72,7 @@ class Config:
     d_mlp: int = 3072
     n_heads: int = 12
     n_layers: int = 12
+
 
 class LayerNorm(nn.Module):
     def __init__(self, cfg: Config):
@@ -93,6 +95,7 @@ class LayerNorm(nn.Module):
 
         return scaled
 
+
 class Embed(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -106,7 +109,8 @@ class Embed(nn.Module):
         if self.cfg.debug:
             print("Input shape: ", tokens.shape)
         return self.W_E[tokens, :]
-    
+
+
 class PosEmbed(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -123,7 +127,8 @@ class PosEmbed(nn.Module):
         indices = t.stack([t.arange(tokens.shape[1]) for _ in range(tokens.shape[0])])
 
         return self.W_pos[indices, :]
-    
+
+
 class Attention(nn.Module):
     IGNORE: Float[Tensor, ""]
 
@@ -311,6 +316,7 @@ class MLP(nn.Module):
             + self.b_out
         )
 
+
 class TransformerBlock(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -320,12 +326,15 @@ class TransformerBlock(nn.Module):
         self.ln2 = LayerNorm(cfg)
         self.mlp = MLP(cfg)
 
-    def forward(self, resid_pre: Float[Tensor, "batch position d_model"]) -> Float[Tensor, "batch position d_model"]:
+    def forward(
+        self, resid_pre: Float[Tensor, "batch position d_model"]
+    ) -> Float[Tensor, "batch position d_model"]:
         post_attn = self.attn(self.ln1(resid_pre)) + resid_pre
         post_mlp = self.mlp(self.ln2(post_attn))
 
         return post_attn + post_mlp
-    
+
+
 class Unembed(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -338,10 +347,15 @@ class Unembed(nn.Module):
     def forward(
         self, normalized_resid_final: Float[Tensor, "batch position d_model"]
     ) -> Float[Tensor, "batch position d_vocab"]:
-        
-        return einops.einsum(normalized_resid_final, self.W_U, 
-                      "batch position d_model, d_model d_vocab -> batch position d_vocab") + self.b_U
 
+        return (
+            einops.einsum(
+                normalized_resid_final,
+                self.W_U,
+                "batch position d_model, d_model d_vocab -> batch position d_vocab",
+            )
+            + self.b_U
+        )
 
 
 class DemoTransformer(nn.Module):
@@ -350,11 +364,15 @@ class DemoTransformer(nn.Module):
         self.cfg = cfg
         self.embed = Embed(cfg)
         self.pos_embed = PosEmbed(cfg)
-        self.blocks = nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)])
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(cfg) for _ in range(cfg.n_layers)]
+        )
         self.ln_final = LayerNorm(cfg)
         self.unembed = Unembed(cfg)
 
-    def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_vocab"]:
+    def forward(
+        self, tokens: Int[Tensor, "batch position"]
+    ) -> Float[Tensor, "batch position d_vocab"]:
         embedded = self.embed(tokens)
         pos_embedded = self.pos_embed(tokens)
 
@@ -363,6 +381,7 @@ class DemoTransformer(nn.Module):
             transformer_input = trasf_block(transformer_input)
 
         return self.unembed(self.ln_final(transformer_input))
+
 
 # %%
 ########################
@@ -384,6 +403,7 @@ model_cfg = Config(
 )
 model = DemoTransformer(model_cfg)
 
+
 @dataclass
 class TransformerTrainingArgs:
     batch_size: int = 16
@@ -396,11 +416,11 @@ class TransformerTrainingArgs:
     wandb_name: str | None = None
 
 
-args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=100, 
-                               max_steps_per_epoch=200)
+args = TransformerTrainingArgs(batch_size=16, epochs=100, max_steps_per_epoch=200)
 # %%
-dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
+dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns(
+    "meta"
+)
 print(dataset)
 print(dataset[0]["text"][:100])
 # %%
@@ -416,10 +436,18 @@ tokenized_dataset = tokenize_and_concatenate(
 
 dataset_dict = tokenized_dataset.train_test_split(test_size=1000)
 train_loader = DataLoader(
-    dataset_dict["train"], batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=True
+    dataset_dict["train"],
+    batch_size=args.batch_size,
+    shuffle=True,
+    num_workers=0,
+    pin_memory=True,
 )
 test_loader = DataLoader(
-    dataset_dict["test"], batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=True
+    dataset_dict["test"],
+    batch_size=args.batch_size,
+    shuffle=False,
+    num_workers=0,
+    pin_memory=True,
 )
 
 # %%
@@ -427,45 +455,52 @@ first_batch = train_loader.dataset[: args.batch_size]
 
 print(first_batch.keys())
 print(first_batch["tokens"].shape)
+
+
 # %%
 ## for predictions:
 def sampling_fn(model: DemoTransformer, prompt: str) -> str:
     sampler = solutions.TransformerSampler(model, reference_gpt2.tokenizer)
-    output = sampler.sample(prompt, temperature=0.7, top_p=0.95, max_tokens_generated=16)
+    output = sampler.sample(
+        prompt, temperature=0.7, top_p=0.95, max_tokens_generated=16
+    )
     return output
 
+
 class TransformerTrainer:
-    def __init__(self, args: TransformerTrainingArgs, 
-                 model: DemoTransformer,
-                 prompt_list = None):
+    def __init__(
+        self, args: TransformerTrainingArgs, model: DemoTransformer, prompt_list=None
+    ):
         super().__init__()
         self.model = model
         self.args = args
 
-        self.optimizer = t.optim.AdamW(self.model.parameters(), 
-                                       lr=args.lr, 
-                                       weight_decay=args.weight_decay)
+        self.optimizer = t.optim.AdamW(
+            self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        )
         self.step = 0
 
         n_workers = 0
         self.train_loader = DataLoader(
-            dataset_dict["train"], 
-            batch_size=args.batch_size, 
-            shuffle=True, 
-            num_workers=n_workers, 
+            dataset_dict["train"],
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=n_workers,
             pin_memory=True,
         )
         self.test_loader = DataLoader(
-            dataset_dict["test"], 
-            batch_size=args.batch_size, 
-            shuffle=False, 
-            num_workers=n_workers, 
+            dataset_dict["test"],
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=n_workers,
             pin_memory=True,
         )
 
         self.prompt_list = prompt_list
 
-    def training_step(self, batch: dict[str, Int[Tensor, "batch seq"]]) -> Float[Tensor, ""]:
+    def training_step(
+        self, batch: dict[str, Int[Tensor, "batch seq"]]
+    ) -> Float[Tensor, ""]:
         """
         Calculates the loss on the tokens in the batch, performs a gradient update step, and logs the loss.
 
@@ -477,8 +512,7 @@ class TransformerTrainer:
         demo_logits = self.model(tokens)
         log_softmax = demo_logits.log_softmax(dim=-1)
 
-        gathered_probs = log_softmax.gather(2, 
-                                            tokens[:, 1:].unsqueeze(-1)).squeeze(-1)
+        gathered_probs = log_softmax.gather(2, tokens[:, 1:].unsqueeze(-1)).squeeze(-1)
 
         loss = -gathered_probs.mean()
 
@@ -488,7 +522,6 @@ class TransformerTrainer:
         self.step += 1
 
         wandb.log(dict(loss=loss), step=self.step)
-        
 
         return loss
 
@@ -498,7 +531,7 @@ class TransformerTrainer:
         Evaluate the model on the test set and return the accuracy.
         """
         n_matches = 0
-        total_n = 0 
+        total_n = 0
 
         for batch in self.test_loader:
             tokens = batch["tokens"].to(device)
@@ -507,7 +540,7 @@ class TransformerTrainer:
 
             n_matches += (prediction[:, :-1] == tokens[:, 1:]).sum()
             total_n += prediction[:, :-1].numel()
-        
+
         accuracy = n_matches / total_n
 
         wandb.log(dict(accuracy=accuracy), step=self.step)
@@ -522,10 +555,12 @@ class TransformerTrainer:
         if self.args.use_wandb:
             full_config = self.args.__dict__.copy()
             full_config.update(self.model.cfg.__dict__)
-            wandb.init(project=self.args.wandb_project, 
-                       name=self.args.wandb_name, 
-                       config=full_config)
-        
+            wandb.init(
+                project=self.args.wandb_project,
+                name=self.args.wandb_name,
+                config=full_config,
+            )
+
         accuracy = np.nan
 
         progress_bar = tqdm(total=self.args.max_steps_per_epoch * self.args.epochs)
@@ -536,22 +571,39 @@ class TransformerTrainer:
 
                 loss = self.training_step(batch)
                 progress_bar.update()
-                progress_bar.set_description(f"Epoch {epoch+1}, loss: {loss:.3f}, accuracy: {accuracy:.3f}")
+                progress_bar.set_description(
+                    f"Epoch {epoch+1}, loss: {loss:.3f}, accuracy: {accuracy:.3f}"
+                )
                 if i >= self.args.max_steps_per_epoch:
                     break
 
             accuracy = self.evaluate()
 
             if self.prompt_list is not None:
-                sampled = [sampling_fn(model, prompt=prompt) for prompt in self.prompt_list]
-                
-                inferences_list.append([self.step, epoch, ] + sampled)
-                
-                inf_table = wandb.Table(columns=["step", "epoch", ] + [f"text{i}" for i in range(len(sampled))],
-                                        data=inferences_list)
+                sampled = [
+                    sampling_fn(model, prompt=prompt) for prompt in self.prompt_list
+                ]
+
+                inferences_list.append(
+                    [
+                        self.step,
+                        epoch,
+                    ]
+                    + sampled
+                )
+
+                inf_table = wandb.Table(
+                    columns=[
+                        "step",
+                        "epoch",
+                    ]
+                    + [f"text{i}" for i in range(len(sampled))],
+                    data=inferences_list,
+                )
                 wandb.log(data=dict(table=inf_table))
         if self.args.use_wandb:
             wandb.finish()
+
 
 # %%
 model_cfg = Config(
@@ -560,13 +612,11 @@ model_cfg = Config(
     n_heads=8,
     d_head=64,
     d_mlp=1024,
-    n_layers=2, # 2,
+    n_layers=2,  # 2,
     n_ctx=256,
     d_vocab=reference_gpt2.cfg.d_vocab,
 )
-args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=4000, 
-                               max_steps_per_epoch=5)
+args = TransformerTrainingArgs(batch_size=16, epochs=4000, max_steps_per_epoch=5)
 
 model = DemoTransformer(model_cfg).to(device)
 trainer = TransformerTrainer(args, model)
@@ -577,20 +627,19 @@ trainer.train()
 # add predictions:
 model_cfg = Config(
     debug=False,
-    d_model=256*4,
+    d_model=256 * 4,
     n_heads=8,
     d_head=64,
     d_mlp=1024,
-    n_layers=2, # 2,
+    n_layers=2,  # 2,
     n_ctx=256,
     d_vocab=reference_gpt2.cfg.d_vocab,
 )
-args = TransformerTrainingArgs(batch_size=16, 
-                               epochs=4000, 
-                               max_steps_per_epoch=100)
+args = TransformerTrainingArgs(batch_size=16, epochs=4000, max_steps_per_epoch=100)
 
 model = DemoTransformer(model_cfg).to(device)
-trainer = TransformerTrainer(args, model,
-                             prompt_list=["The house was built on", "John and Mary went to the"])
+trainer = TransformerTrainer(
+    args, model, prompt_list=["The house was built on", "John and Mary went to the"]
+)
 trainer.train()
 # %%

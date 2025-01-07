@@ -59,6 +59,7 @@ reference_gpt2 = HookedTransformer.from_pretrained(
 # %%
 # Building blocks for transformer:
 
+
 @dataclass
 class Config:
     d_model: int = 768
@@ -71,6 +72,7 @@ class Config:
     d_mlp: int = 3072
     n_heads: int = 12
     n_layers: int = 12
+
 
 class LayerNorm(nn.Module):
     def __init__(self, cfg: Config):
@@ -91,6 +93,7 @@ class LayerNorm(nn.Module):
 
         return scaled
 
+
 class Embed(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -102,7 +105,8 @@ class Embed(nn.Module):
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_model"]:
         return self.W_E[tokens, :]
-    
+
+
 class PosEmbed(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -117,7 +121,8 @@ class PosEmbed(nn.Module):
         indices = t.stack([t.arange(tokens.shape[1]) for _ in range(tokens.shape[0])])
 
         return self.W_pos[indices, :]
-    
+
+
 class Attention(nn.Module):
     IGNORE: Float[Tensor, ""]
 
@@ -305,6 +310,7 @@ class MLP(nn.Module):
             + self.b_out
         )
 
+
 class TransformerBlock(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
@@ -314,12 +320,15 @@ class TransformerBlock(nn.Module):
         self.ln2 = LayerNorm(cfg)
         self.mlp = MLP(cfg)
 
-    def forward(self, resid_pre: Float[Tensor, "batch position d_model"]) -> Float[Tensor, "batch position d_model"]:
+    def forward(
+        self, resid_pre: Float[Tensor, "batch position d_model"]
+    ) -> Float[Tensor, "batch position d_model"]:
         post_attn = self.attn(self.ln1(resid_pre)) + resid_pre
         post_mlp = self.mlp(self.ln2(post_attn))
 
         return post_attn + post_mlp
-    
+
+
 class Unembed(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -332,10 +341,15 @@ class Unembed(nn.Module):
     def forward(
         self, normalized_resid_final: Float[Tensor, "batch position d_model"]
     ) -> Float[Tensor, "batch position d_vocab"]:
-        
-        return einops.einsum(normalized_resid_final, self.W_U, 
-                      "batch position d_model, d_model d_vocab -> batch position d_vocab") + self.b_U
 
+        return (
+            einops.einsum(
+                normalized_resid_final,
+                self.W_U,
+                "batch position d_model, d_model d_vocab -> batch position d_vocab",
+            )
+            + self.b_U
+        )
 
 
 class DemoTransformer(nn.Module):
@@ -344,11 +358,15 @@ class DemoTransformer(nn.Module):
         self.cfg = cfg
         self.embed = Embed(cfg)
         self.pos_embed = PosEmbed(cfg)
-        self.blocks = nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)])
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(cfg) for _ in range(cfg.n_layers)]
+        )
         self.ln_final = LayerNorm(cfg)
         self.unembed = Unembed(cfg)
 
-    def forward(self, tokens: Int[Tensor, "batch position"]) -> Float[Tensor, "batch position d_vocab"]:
+    def forward(
+        self, tokens: Int[Tensor, "batch position"]
+    ) -> Float[Tensor, "batch position d_vocab"]:
         embedded = self.embed(tokens)
         pos_embedded = self.pos_embed(tokens)
 
@@ -370,10 +388,13 @@ class TransformerTrainingArgs:
     wandb_project: str | None = "day1-demotransformer"
     wandb_name: str | None = None
 
+
 cfg = Config()
 cfg_trainer = TransformerTrainingArgs()
 
-dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
+dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns(
+    "meta"
+)
 
 tokenized_dataset = tokenize_and_concatenate(
     dataset,
@@ -387,50 +408,64 @@ tokenized_dataset = tokenize_and_concatenate(
 
 dataset_dict = tokenized_dataset.train_test_split(test_size=1000)
 train_loader = DataLoader(
-    dataset_dict["train"], batch_size=cfg_trainer.batch_size, shuffle=True, num_workers=0, pin_memory=True
+    dataset_dict["train"],
+    batch_size=cfg_trainer.batch_size,
+    shuffle=True,
+    num_workers=0,
+    pin_memory=True,
 )
 test_loader = DataLoader(
-    dataset_dict["test"], batch_size=cfg_trainer.batch_size, shuffle=False, num_workers=0, pin_memory=True
+    dataset_dict["test"],
+    batch_size=cfg_trainer.batch_size,
+    shuffle=False,
+    num_workers=0,
+    pin_memory=True,
 )
+
 
 ## for predictions:
 def sampling_fn(model: DemoTransformer, prompt: str) -> str:
     sampler = solutions.TransformerSampler(model, reference_gpt2.tokenizer)
-    output = sampler.sample(prompt, temperature=0.7, top_p=0.95, max_tokens_generated=16)
+    output = sampler.sample(
+        prompt, temperature=0.7, top_p=0.95, max_tokens_generated=16
+    )
     return output
 
+
 class TransformerTrainer:
-    def __init__(self, args: TransformerTrainingArgs, 
-                 model: DemoTransformer,
-                 prompt_list = None):
+    def __init__(
+        self, args: TransformerTrainingArgs, model: DemoTransformer, prompt_list=None
+    ):
         super().__init__()
         self.model = model
         self.args = args
 
-        self.optimizer = t.optim.AdamW(self.model.parameters(), 
-                                       lr=args.lr, 
-                                       weight_decay=args.weight_decay)
+        self.optimizer = t.optim.AdamW(
+            self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        )
         self.step = 0
 
         n_workers = 0
         self.train_loader = DataLoader(
-            dataset_dict["train"], 
-            batch_size=args.batch_size, 
-            shuffle=True, 
-            num_workers=n_workers, 
+            dataset_dict["train"],
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=n_workers,
             pin_memory=True,
         )
         self.test_loader = DataLoader(
-            dataset_dict["test"], 
-            batch_size=args.batch_size, 
-            shuffle=False, 
-            num_workers=n_workers, 
+            dataset_dict["test"],
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=n_workers,
             pin_memory=True,
         )
 
         self.prompt_list = prompt_list
 
-    def training_step(self, batch: dict[str, Int[Tensor, "batch seq"]]) -> Float[Tensor, ""]:
+    def training_step(
+        self, batch: dict[str, Int[Tensor, "batch seq"]]
+    ) -> Float[Tensor, ""]:
         """
         Calculates the loss on the tokens in the batch, performs a gradient update step, and logs the loss.
 
@@ -442,8 +477,7 @@ class TransformerTrainer:
         demo_logits = self.model(tokens)
         log_softmax = demo_logits.log_softmax(dim=-1)
 
-        gathered_probs = log_softmax.gather(2, 
-                                            tokens[:, 1:].unsqueeze(-1)).squeeze(-1)
+        gathered_probs = log_softmax.gather(2, tokens[:, 1:].unsqueeze(-1)).squeeze(-1)
 
         loss = -gathered_probs.mean()
 
@@ -453,7 +487,7 @@ class TransformerTrainer:
         self.step += 1
 
         wandb.log(dict(loss=loss), step=self.step)
-        
+
         return loss
 
     @t.inference_mode()
@@ -462,7 +496,7 @@ class TransformerTrainer:
         Evaluate the model on the test set and return the accuracy.
         """
         n_matches = 0
-        total_n = 0 
+        total_n = 0
 
         for batch in self.test_loader:
             tokens = batch["tokens"].to(device)
@@ -471,7 +505,7 @@ class TransformerTrainer:
 
             n_matches += (prediction[:, :-1] == tokens[:, 1:]).sum()
             total_n += prediction[:, :-1].numel()
-        
+
         accuracy = n_matches / total_n
 
         wandb.log(dict(accuracy=accuracy), step=self.step)
@@ -486,10 +520,12 @@ class TransformerTrainer:
         if self.args.use_wandb:
             full_config = self.args.__dict__.copy()
             full_config.update(self.model.cfg.__dict__)
-            wandb.init(project=self.args.wandb_project, 
-                       name=self.args.wandb_name, 
-                       config=full_config)
-        
+            wandb.init(
+                project=self.args.wandb_project,
+                name=self.args.wandb_name,
+                config=full_config,
+            )
+
         accuracy = np.nan
 
         progress_bar = tqdm(total=self.args.max_steps_per_epoch * self.args.epochs)
@@ -500,21 +536,38 @@ class TransformerTrainer:
 
                 loss = self.training_step(batch)
                 progress_bar.update()
-                progress_bar.set_description(f"Epoch {epoch+1}, loss: {loss:.3f}, accuracy: {accuracy:.3f}")
+                progress_bar.set_description(
+                    f"Epoch {epoch+1}, loss: {loss:.3f}, accuracy: {accuracy:.3f}"
+                )
                 if i >= self.args.max_steps_per_epoch:
                     break
 
             accuracy = self.evaluate()
 
             if self.prompt_list is not None:
-                sampled = [sampling_fn(model, prompt=prompt) for prompt in self.prompt_list]
-                
-                inferences_list.append([self.step, epoch, ] + sampled)
-                inf_table = wandb.Table(columns=["step", "epoch", ] + [f"text{i}" for i in range(len(sampled))],
-                                        data=inferences_list)
+                sampled = [
+                    sampling_fn(model, prompt=prompt) for prompt in self.prompt_list
+                ]
+
+                inferences_list.append(
+                    [
+                        self.step,
+                        epoch,
+                    ]
+                    + sampled
+                )
+                inf_table = wandb.Table(
+                    columns=[
+                        "step",
+                        "epoch",
+                    ]
+                    + [f"text{i}" for i in range(len(sampled))],
+                    data=inferences_list,
+                )
                 wandb.log(data=dict(table=inf_table))
         if self.args.use_wandb:
             wandb.finish()
+
 
 # %%
 t.set_grad_enabled(False)  # gradients are not necessary for sampling
@@ -523,6 +576,7 @@ model = DemoTransformer(cfg).to(device)
 model.load_state_dict(reference_gpt2.state_dict(), strict=False)
 tokenizer = reference_gpt2.tokenizer
 # %%
+
 
 class TransformerSampler:
     def __init__(self, model: DemoTransformer, tokenizer: GPT2TokenizerFast):
@@ -538,23 +592,21 @@ class TransformerSampler:
         Sampling terminates at max_tokens_generated, or when the model generates an end-of-sequence token. kwargs are
         passed to sample_next_token, to give detailed instructions on how new tokens are chosen.
         """
-        token_ids = self.tokenizer.encode(prompt,return_tensors="pt")[0]
+        token_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0]
 
         for _ in range(max_tokens_generated):
             logits = model(token_ids.unsqueeze(0))
-            next_token = self.sample_next_token(token_ids, 
-                                                logits[0, -1, :], 
-                                                **kwargs)
+            next_token = self.sample_next_token(token_ids, logits[0, -1, :], **kwargs)
 
             if next_token == self.tokenizer.eos_token_id:
                 break
 
             token_ids = t.concatenate([token_ids, t.tensor([next_token])])
-            
-            output = self.tokenizer.decode(token_ids) 
+
+            output = self.tokenizer.decode(token_ids)
             if verbose:
                 print(output)
-        
+
         return output
 
     @staticmethod
@@ -571,7 +623,9 @@ class TransformerSampler:
         assert temperature >= 0, "Temperature should be non-negative"
         assert 0 <= top_p <= 1.0, "Top-p must be a probability"
         assert 0 <= top_k, "Top-k must be non-negative"
-        assert not (top_p != 0 and top_k != 0), "At most one of top-p and top-k supported"
+        assert not (
+            top_p != 0 and top_k != 0
+        ), "At most one of top-p and top-k supported"
 
         # Set random seeds for reproducibility
         if seed is not None:
@@ -584,7 +638,9 @@ class TransformerSampler:
         elif temperature != 1.0:
             logits = TransformerSampler.apply_temperature(logits, temperature)
         if frequency_penalty != 0.0:
-            logits = TransformerSampler.apply_frequency_penalty(input_ids, logits, frequency_penalty)
+            logits = TransformerSampler.apply_frequency_penalty(
+                input_ids, logits, frequency_penalty
+            )
         if top_k > 0:
             return TransformerSampler.sample_top_k(logits, top_k)
         if top_p > 0.0:
@@ -599,7 +655,9 @@ class TransformerSampler:
         return logits.argmax().item()
 
     @staticmethod
-    def apply_temperature(logits: Float[Tensor, "d_vocab"], temperature: float) -> Float[Tensor, "d_vocab"]:
+    def apply_temperature(
+        logits: Float[Tensor, "d_vocab"], temperature: float
+    ) -> Float[Tensor, "d_vocab"]:
         """
         Applies temperature scaling to the logits.
         """
@@ -607,7 +665,9 @@ class TransformerSampler:
 
     @staticmethod
     def apply_frequency_penalty(
-        input_ids: Int[Tensor, "seq_len"], logits: Float[Tensor, "d_vocab"], freq_penalty: float
+        input_ids: Int[Tensor, "seq_len"],
+        logits: Float[Tensor, "d_vocab"],
+        freq_penalty: float,
     ) -> Float[Tensor, "d_vocab"]:
         """
         Applies a frequency penalty to the logits.
@@ -635,7 +695,9 @@ class TransformerSampler:
         return top_k_token_ids[new_id].item()
 
     @staticmethod
-    def sample_top_p(logits: Float[Tensor, "d_vocab"], top_p: float, min_tokens_to_keep: int = 1) -> int:
+    def sample_top_p(
+        logits: Float[Tensor, "d_vocab"], top_p: float, min_tokens_to_keep: int = 1
+    ) -> int:
         """
         Samples from the most likely tokens which make up at least p cumulative probability.
         """
@@ -644,16 +706,13 @@ class TransformerSampler:
 
         prob_cumsum = t.cumsum(sorted_probs, 0)
 
-        n_to_take = max((prob_cumsum < top_p).sum().item() + 1, 
-                        min_tokens_to_keep)
+        n_to_take = max((prob_cumsum < top_p).sum().item() + 1, min_tokens_to_keep)
         filtered_probs = sorted_probs[:n_to_take]
         filtered_ids = sorted_ids[:n_to_take]
 
         new_id = t.distributions.categorical.Categorical(probs=filtered_probs).sample()
 
         return filtered_ids[new_id].item()
-
-
 
     @t.inference_mode()
     def beam_search(
@@ -670,33 +729,7 @@ class TransformerSampler:
         we've generated `num_returns_sequences` terminating sequences.
         """
         raise NotImplementedError()
-    
-sampler = TransformerSampler(model, tokenizer)
 
-prompt = "John and Mary went to the"
-input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
-logits = model(input_ids)[0, -1]
-
-expected_top_10pct = {
-    " church": 0.0648,
-    " house": 0.0367,  # These are the two most likely tokens, and add up to >10%
-}
-top_10pct_sum = sum(expected_top_10pct.values())
-
-observed_freqs = defaultdict(int)
-
-N = 10_000
-for _ in tqdm(range(N)):
-    token = TransformerSampler.sample_next_token(input_ids.squeeze(), logits, top_p=0.1)
-    observed_freqs[tokenizer.decode(token)] += 1
-
-for word in expected_top_10pct:
-    expected_freq = expected_top_10pct[word] / top_10pct_sum
-    observed_freq = observed_freqs[word] / N
-    print(f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}")
-    print(abs(observed_freq - expected_freq) < 0.01, "Try increasing N if this fails by a small amount.")
-
-# %%
 
 # %%
 
@@ -706,7 +739,9 @@ sampler = TransformerSampler(model, tokenizer)
 prompt = "Jingle bells, jingle bells, jingle all the way"
 print(f"Testing greedy decoding\nPrompt:   {prompt!r}")
 
-expected = "Jingle bells, jingle bells, jingle all the way up to the top of the mountain."
+expected = (
+    "Jingle bells, jingle bells, jingle all the way up to the top of the mountain."
+)
 output = sampler.sample(prompt, max_tokens_generated=8, temperature=0.0)
 
 print(f"Expected: {expected!r}\nActual:   {output!r}\n")
@@ -719,7 +754,13 @@ prompt = "John and Mary went to the"
 input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
 logits = model(input_ids)[0, -1]
 
-expected_top_5 = {" church": 0.0648, " house": 0.0367, " temple": 0.0145, " same": 0.0104, " Church": 0.0097}
+expected_top_5 = {
+    " church": 0.0648,
+    " house": 0.0367,
+    " temple": 0.0145,
+    " same": 0.0104,
+    " Church": 0.0097,
+}
 frequency_of_top_5 = defaultdict(int)
 
 N = 10_000
@@ -730,8 +771,12 @@ for _ in tqdm(range(N)):
 for word in expected_top_5:
     expected_freq = expected_top_5[word]
     observed_freq = frequency_of_top_5[word] / N
-    print(f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}")
-    assert abs(observed_freq - expected_freq) < 0.01, "Try increasing N if this fails by a small amount."
+    print(
+        f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}"
+    )
+    assert (
+        abs(observed_freq - expected_freq) < 0.01
+    ), "Try increasing N if this fails by a small amount."
 
 print("Tests passed!")
 # %%
@@ -751,10 +796,16 @@ print("Tests passed!")
 bieber_prompt = "And I was like Baby, baby, baby, oh Like, Baby, baby, baby, no Like, Baby, baby, baby, oh I thought you'd always be mine, mine"
 input_ids = tokenizer.encode(bieber_prompt, return_tensors="pt")
 logits = t.ones(tokenizer.vocab_size)
-penalized_logits = TransformerSampler.apply_frequency_penalty(input_ids.squeeze(), logits, 2.0)
+penalized_logits = TransformerSampler.apply_frequency_penalty(
+    input_ids.squeeze(), logits, 2.0
+)
 
-assert penalized_logits[5156].item() == -11, "Expected 6 occurrences of ' baby' with leading space, 1-2*6=-11"
-assert penalized_logits[14801].item() == -5, "Expected 3 occurrences of ' Baby' with leading space, 1-2*3=-5"
+assert (
+    penalized_logits[5156].item() == -11
+), "Expected 6 occurrences of ' baby' with leading space, 1-2*6=-11"
+assert (
+    penalized_logits[14801].item() == -5
+), "Expected 3 occurrences of ' Baby' with leading space, 1-2*3=-5"
 
 print("Tests passed!")
 # %%
@@ -780,14 +831,20 @@ for name, kwargs in cases:
 
 rprint(table)
 # %%
-dist = t.distributions.categorical.Categorical(logits=t.tensor([1,2,3]))
+dist = t.distributions.categorical.Categorical(logits=t.tensor([1, 2, 3]))
 dist.sample().item()
 # %%
 prompt = "John and Mary went to the"
 input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
 logits = model(input_ids)[0, -1]
 
-expected_top_5 = {" church": 0.0648, " house": 0.0367, " temple": 0.0145, " same": 0.0104, " Church": 0.0097}
+expected_top_5 = {
+    " church": 0.0648,
+    " house": 0.0367,
+    " temple": 0.0145,
+    " same": 0.0104,
+    " Church": 0.0097,
+}
 topk_5_sum = sum(expected_top_5.values())
 
 observed_freqs = defaultdict(int)
@@ -800,7 +857,9 @@ for _ in tqdm(range(N)):
 for word in expected_top_5:
     expected_freq = expected_top_5[word] / topk_5_sum
     observed_freq = observed_freqs[word] / N
-    print(f"Word: {word!r:<9}. Expected freq = {expected_freq:.4f}, observed freq = {observed_freq:.4f}")
+    print(
+        f"Word: {word!r:<9}. Expected freq = {expected_freq:.4f}, observed freq = {observed_freq:.4f}"
+    )
     assert abs(observed_freq - expected_freq) < 0.01
 
 # %%
@@ -832,5 +891,9 @@ for _ in tqdm(range(N)):
 for word in expected_top_10pct:
     expected_freq = expected_top_10pct[word] / top_10pct_sum
     observed_freq = observed_freqs[word] / N
-    print(f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}")
-    assert abs(observed_freq - expected_freq) < 0.01, "Try increasing N if this fails by a small amount."
+    print(
+        f"Word: {word!r:<9}. Expected freq {expected_freq:.4f}, observed freq {observed_freq:.4f}"
+    )
+    assert (
+        abs(observed_freq - expected_freq) < 0.01
+    ), "Try increasing N if this fails by a small amount."
