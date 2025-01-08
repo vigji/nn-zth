@@ -728,8 +728,123 @@ class TransformerSampler:
         prompt) until either of the two stopping criteria are met: (1) we've generated `max_new_tokens` tokens, or (2)
         we've generated `num_returns_sequences` terminating sequences.
         """
+        return NotImplementedError()
+
+@dataclass
+class Beams:
+    """Class to store beams during beam search."""
+
+    model: DemoTransformer
+    tokenizer: GPT2TokenizerFast
+    logprob_sums: Float[Tensor, "batch"]
+    tokens: Int[Tensor, "batch seq"]
+
+    def __getitem__(self, batch_idx) -> "Beams":
+        """Allows you to create new beams from old beams by slicing along batch dim (useful for `filter`)."""
+        return Beams(self.model, self.tokenizer, self.logprob_sums[batch_idx], self.tokens[batch_idx])
+
+    @property
+    def logprobs_and_completions(self) -> list[tuple[float, str]]:
+        """Returns self as a list of logprob sums and completions (useful for getting final output)."""
+        return [
+            (logprob_sum.item(), self.tokenizer.decode(tokens))
+            for (logprob_sum, tokens) in zip(self.logprob_sums, self.tokens)
+        ]
+
+    def generate(self, k: int, no_repeat_ngram_size: int | None = None) -> "Beams":
+        """
+        Starting from the current set of beams (i.e. self.tokens) and returns a new set of `len(self.tokens) * k` beams,
+        containing the best `k` continuations for each of the original beams.
+
+        Optional argument `no_repeat_ngram_size` means your model won't generate any sequences with a repeating n-gram
+        of this length.
+        """
+        
+
+
+        token_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0]
+
+        for tokens in self.tokens:
+            logits = model(token_ids.unsqueeze(0))
+            next_token = self.sample_next_token(token_ids, logits[0, -1, :], **kwargs)
+
+    def filter(self, k: int) -> tuple["Beams", "Beams"]:
+        """
+        Returns:
+            best_beams: Beams
+                filtered version of self, containing all best `k` which are also not terminated.
+            early_terminations: Beams
+                filtered version of self, containing all best `k` which are also terminated.
+        """
         raise NotImplementedError()
 
+
+    def print(self, title="Best completions", max_print_chars=80) -> None:
+        """
+        Prints out a set of sequences with their corresponding logprob sums.
+        """
+        if len(self.tokens) == 0:
+            return
+        table = Table("logprob sum", "completion", title=title)
+        for logprob_sum, tokens in zip(self.logprob_sums, self.tokens):
+            text = self.tokenizer.decode(tokens)
+            if len(repr(text)) > max_print_chars:
+                text = text[: int(0.3 * max_print_chars)] + " ... " + text[-int(0.7 * max_print_chars) :]
+            table.add_row(f"{logprob_sum:>8.3f}", repr(text))
+        rprint(table)
+
+
+@t.inference_mode()
+def beam_search(
+    self: TransformerSampler,
+    prompt: str,
+    num_return_sequences: int,
+    num_beams: int,
+    max_new_tokens: int,
+    no_repeat_ngram_size: int | None = None,
+) -> list[tuple[float, str]]:
+    """
+    Implements a beam search, by repeatedly performing the `generate` and `filter` steps (starting from the initial
+    prompt) until either of the two stopping criteria are met: (1) we've generated `max_new_tokens` tokens, or (2)
+    we've generated `num_returns_sequences` terminating sequences.
+    """
+    assert num_return_sequences <= num_beams
+    self.model.eval()
+
+    tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(device)
+
+    final_logprobs_and_completions = []  # we add to this list as we get terminated beams
+    best_beams = Beams(self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens)  # start with just 1 beam
+
+    for _ in tqdm(range(max_new_tokens)):
+        t.cuda.empty_cache()
+
+        # Generate & filter beams
+        best_beams = best_beams.generate(k=num_beams, no_repeat_ngram_size=no_repeat_ngram_size)
+        best_beams, best_beams_terminated = best_beams.filter(k=num_beams)
+
+        # Add terminated beams to our list, and return early if we have enough
+        final_logprobs_and_completions.extend(best_beams_terminated.logprobs_and_completions)
+        if len(final_logprobs_and_completions) >= num_return_sequences:
+            return final_logprobs_and_completions[:num_return_sequences]
+
+    # Return terminated beams plus the best ongoing beams of length `orig_len + max_new_tokens`
+    final_logprobs_and_completions.extend(best_beams.logprobs_and_completions)
+    return final_logprobs_and_completions[:num_return_sequences]
+
+
+TransformerSampler.beam_search = beam_search
+
+# Start with prompt "When I was", get top 3 tokens (and their logprobs), and use that to create & display the top 3 beams
+prompt = "When I was"
+tokens = tokenizer.encode(prompt, return_tensors="pt").to(device)
+logprobs = model(tokens)[0, -1].log_softmax(-1)
+top_logprobs, top_tokens = logprobs.topk(k=3, dim=-1)
+
+new_tokens = t.concat([tokens.repeat(3, 1), top_tokens.unsqueeze(-1)], dim=-1)
+
+beams = Beams(model, tokenizer, logprob_sums=top_logprobs, tokens=new_tokens)
+beams.print()
 
 # %%
 
@@ -897,3 +1012,14 @@ for word in expected_top_10pct:
     assert (
         abs(observed_freq - expected_freq) < 0.01
     ), "Try increasing N if this fails by a small amount."
+
+# %%
+@dataclass
+class SampleClass:
+    a: int
+    b: float
+
+
+s = SampleClass(a=2, b=3)
+s
+# %%
