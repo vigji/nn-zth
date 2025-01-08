@@ -760,13 +760,23 @@ class Beams:
         of this length.
         """
         
+        # token_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0]
 
+        new_tokens = []
+        new_logprobs = []
 
-        token_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0]
+        for tokens, log_probs in zip(self.tokens, self.logprob_sums):
+            logits = self.model(tokens)
+            new_log_probs = logits.log_softmax(-1)
+            top_k_log_probs, top_k_token_ids = new_log_probs.topk(k)
 
-        for tokens in self.tokens:
-            logits = model(token_ids.unsqueeze(0))
-            next_token = self.sample_next_token(token_ids, logits[0, -1, :], **kwargs)
+            for tok_prob, tok_id in zip(top_k_log_probs, top_k_token_ids):
+                new_token = t.concatenate([tokens, t.tensor([tok_id])])
+                new_tokens.append(new_token)
+                new_logprobs.aooend(log_probs + tok_prob)
+
+        return Beams(self.model, self.tokenizer, new_log_probs, new_tokens)
+
 
     def filter(self, k: int) -> tuple["Beams", "Beams"]:
         """
@@ -825,6 +835,7 @@ def beam_search(
 
         # Add terminated beams to our list, and return early if we have enough
         final_logprobs_and_completions.extend(best_beams_terminated.logprobs_and_completions)
+
         if len(final_logprobs_and_completions) >= num_return_sequences:
             return final_logprobs_and_completions[:num_return_sequences]
 
