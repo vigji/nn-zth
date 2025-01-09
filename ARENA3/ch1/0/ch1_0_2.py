@@ -761,21 +761,22 @@ class Beams:
         """
         
         # token_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0]
+        batch, seq = self.tokens.shape
+        new_tokens = t.empty(batch * k, seq + 1, dtype=self.tokens.dtype)
+        new_logprob_sums = t.empty(batch * k, dtype=self.logprob_sums.dtype)
 
-        new_tokens = []
-        new_logprobs = []
+        all_logits = self.model(self.tokens)
+        all_logprobs = all_logits.log_softmax(-1)
 
-        for tokens, log_probs in zip(self.tokens, self.logprob_sums):
-            logits = self.model(tokens)
-            new_log_probs = logits.log_softmax(-1)
-            top_k_log_probs, top_k_token_ids = new_log_probs.topk(k)
+        for i in range(batch):
+            top_k_log_probs, top_k_token_ids = all_logprobs[i, -1, :].topk(k, dim=-1)
 
-            for tok_prob, tok_id in zip(top_k_log_probs, top_k_token_ids):
-                new_token = t.concatenate([tokens, t.tensor([tok_id])])
-                new_tokens.append(new_token)
-                new_logprobs.aooend(log_probs + tok_prob)
+            new_tokens[i*k:(i+1)*k, :-1] = self.tokens[i, :]
+            new_tokens[i*k:(i+1)*k, -1] = top_k_token_ids
 
-        return Beams(self.model, self.tokenizer, new_log_probs, new_tokens)
+            new_logprob_sums[i*k:(i+1)*k] = self.logprob_sums[i] + top_k_log_probs
+
+        return Beams(self.model, self.tokenizer, new_logprob_sums, new_tokens)
 
 
     def filter(self, k: int) -> tuple["Beams", "Beams"]:
@@ -786,7 +787,33 @@ class Beams:
             early_terminations: Beams
                 filtered version of self, containing all best `k` which are also terminated.
         """
-        raise NotImplementedError()
+        best_beams_tokens = []
+        best_beams_probs = []
+
+        early_terminations_tokens = []
+        early_terminations_probs = []
+
+        _, logprobs_sorted_idxs = self.logprob_sums.sort(descending=True)
+
+        for idx in logprobs_sorted_idxs:
+            tokens = self.tokens[idx]
+            log_probs = self.logprob_sums[idx]
+
+            if len(early_terminations_tokens) < k and tokens[-1] == self.tokenizer.eos_token_id:
+                early_terminations_tokens.append(tokens)
+                early_terminations_probs.append(log_probs)
+            elif len(best_beams_tokens) < k and tokens[-1] == self.tokenizer.eos_token_id:
+                best_beams_tokens.append(tokens)
+                best_beams_tokens.append(log_probs)
+
+        best_beams_tokens = t.tensor(best_beams_tokens)
+        best_beams_probs = t.tensor(best_beams_probs)
+
+        early_terminations_tokens = t.tensor(early_terminations_tokens)
+        early_terminations_probs = t.tensor(early_terminations_probs)
+
+        return (Beams(self.model, self.tokenizer, best_beams_tokens, best_beams_probs),
+                Beams(self.model, self.tokenizer, early_terminations_tokens, early_terminations_probs))
 
 
     def print(self, title="Best completions", max_print_chars=80) -> None:
@@ -856,6 +883,18 @@ new_tokens = t.concat([tokens.repeat(3, 1), top_tokens.unsqueeze(-1)], dim=-1)
 
 beams = Beams(model, tokenizer, logprob_sums=top_logprobs, tokens=new_tokens)
 beams.print()
+
+print("Testing generate...")
+new_beams = beams.generate(k=3, no_repeat_ngram_size=1)
+new_beams.print()
+
+expected_values = [(-3.1, "When I was a kid"), (-4.8, "When I was a child"), (-4.9, "When I was a little")]
+
+for i, (logprob_sum, completion) in enumerate(new_beams.logprobs_and_completions[:3]):
+    assert abs(logprob_sum - expected_values[i][0]) < 0.1, f"{i}"
+    assert completion == expected_values[i][1], f"{i}"
+
+print("All tests for `generate` passed!")
 
 # %%
 
