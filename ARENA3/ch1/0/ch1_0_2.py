@@ -730,6 +730,7 @@ class TransformerSampler:
         """
         return NotImplementedError()
 
+
 @dataclass
 class Beams:
     """Class to store beams during beam search."""
@@ -741,7 +742,12 @@ class Beams:
 
     def __getitem__(self, batch_idx) -> "Beams":
         """Allows you to create new beams from old beams by slicing along batch dim (useful for `filter`)."""
-        return Beams(self.model, self.tokenizer, self.logprob_sums[batch_idx], self.tokens[batch_idx])
+        return Beams(
+            self.model,
+            self.tokenizer,
+            self.logprob_sums[batch_idx],
+            self.tokens[batch_idx],
+        )
 
     @property
     def logprobs_and_completions(self) -> list[tuple[float, str]]:
@@ -759,7 +765,7 @@ class Beams:
         Optional argument `no_repeat_ngram_size` means your model won't generate any sequences with a repeating n-gram
         of this length.
         """
-        
+
         # token_ids = self.tokenizer.encode(prompt, return_tensors="pt")[0]
         batch, seq = self.tokens.shape
         new_tokens = t.empty(batch * k, seq + 1, dtype=self.tokens.dtype)
@@ -769,15 +775,17 @@ class Beams:
         all_logprobs = all_logits.log_softmax(-1)
 
         for i in range(batch):
+
             top_k_log_probs, top_k_token_ids = all_logprobs[i, -1, :].topk(k, dim=-1)
 
-            new_tokens[i*k:(i+1)*k, :-1] = self.tokens[i, :]
-            new_tokens[i*k:(i+1)*k, -1] = top_k_token_ids
+            new_tokens[i * k : (i + 1) * k, :-1] = self.tokens[i, :]
+            new_tokens[i * k : (i + 1) * k, -1] = top_k_token_ids
 
-            new_logprob_sums[i*k:(i+1)*k] = self.logprob_sums[i] + top_k_log_probs
+            new_logprob_sums[i * k : (i + 1) * k] = (
+                self.logprob_sums[i] + top_k_log_probs
+            )
 
         return Beams(self.model, self.tokenizer, new_logprob_sums, new_tokens)
-
 
     def filter(self, k: int) -> tuple["Beams", "Beams"]:
         """
@@ -799,10 +807,15 @@ class Beams:
             tokens = self.tokens[idx]
             log_probs = self.logprob_sums[idx]
 
-            if len(early_terminations_tokens) < k and tokens[-1] == self.tokenizer.eos_token_id:
+            if (
+                len(early_terminations_tokens) < k
+                and tokens[-1] == self.tokenizer.eos_token_id
+            ):
                 early_terminations_tokens.append(tokens)
                 early_terminations_probs.append(log_probs)
-            elif len(best_beams_tokens) < k and tokens[-1] == self.tokenizer.eos_token_id:
+            elif (
+                len(best_beams_tokens) < k and tokens[-1] == self.tokenizer.eos_token_id
+            ):
                 best_beams_tokens.append(tokens)
                 best_beams_tokens.append(log_probs)
 
@@ -812,9 +825,58 @@ class Beams:
         early_terminations_tokens = t.tensor(early_terminations_tokens)
         early_terminations_probs = t.tensor(early_terminations_probs)
 
-        return (Beams(self.model, self.tokenizer, best_beams_tokens, best_beams_probs),
-                Beams(self.model, self.tokenizer, early_terminations_tokens, early_terminations_probs))
+        return (
+            Beams(self.model, self.tokenizer, best_beams_tokens, best_beams_probs),
+            Beams(
+                self.model,
+                self.tokenizer,
+                early_terminations_tokens,
+                early_terminations_probs,
+            ),
+        )
 
+    # copied solution
+    def get_topk_non_repeating(
+        self,
+        logprobs: Float[Tensor, "batch d_vocab"],
+        no_repeat_ngram_size: int | None,
+        k: int,
+    ) -> tuple[Float[Tensor, "k"], Int[Tensor, "k"]]:
+        """
+        logprobs:
+            tensor of the log-probs for the next token
+        no_repeat_ngram_size:
+            size of ngram to avoid repeating
+        k:
+            number of top logits to return, for each beam in our collection
+
+        Returns:
+            equivalent to the output of `logprobs.topk(dim=-1)`, but makes sure that no returned tokens would produce an
+            ngram of size `no_repeat_ngram_size` which has already appeared in `self.tokens`.
+        """
+        batch, seq_len = self.tokens.shape
+
+        # If completion isn't long enough for a repetition, or we have no restructions, just return topk
+        if (no_repeat_ngram_size is not None) and (seq_len > no_repeat_ngram_size - 1):
+            # Otherwise, we need to check for ngram repetitions
+            # First, get the most recent `no_repeat_ngram_size-1` tokens
+            last_ngram_prefix = self.tokens[:, seq_len - (no_repeat_ngram_size - 1) :]
+            # Next, find all the tokens we're not allowed to generate, by checking all past ngrams for a match
+            for i in range(seq_len - (no_repeat_ngram_size - 1)):
+                ngrams = self.tokens[:, i : i + no_repeat_ngram_size]  # (batch, ngram)
+                ngrams_are_repeated = (ngrams[:, :-1] == last_ngram_prefix).all(
+                    -1
+                )  # (batch,)
+                ngram_end_tokens = ngrams[:, [-1]]  # (batch, 1)
+                # Fill logprobs with neginf wherever the ngrams are repeated
+                logprobs[range(batch), ngram_end_tokens] = t.where(
+                    ngrams_are_repeated,
+                    -1.0e4,
+                    logprobs[range(batch), ngram_end_tokens],
+                )
+
+        # Finally, get our actual tokens
+        return logprobs.topk(k=k, dim=-1)
 
     def print(self, title="Best completions", max_print_chars=80) -> None:
         """
@@ -826,7 +888,11 @@ class Beams:
         for logprob_sum, tokens in zip(self.logprob_sums, self.tokens):
             text = self.tokenizer.decode(tokens)
             if len(repr(text)) > max_print_chars:
-                text = text[: int(0.3 * max_print_chars)] + " ... " + text[-int(0.7 * max_print_chars) :]
+                text = (
+                    text[: int(0.3 * max_print_chars)]
+                    + " ... "
+                    + text[-int(0.7 * max_print_chars) :]
+                )
             table.add_row(f"{logprob_sum:>8.3f}", repr(text))
         rprint(table)
 
@@ -850,18 +916,26 @@ def beam_search(
 
     tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(device)
 
-    final_logprobs_and_completions = []  # we add to this list as we get terminated beams
-    best_beams = Beams(self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens)  # start with just 1 beam
+    final_logprobs_and_completions = (
+        []
+    )  # we add to this list as we get terminated beams
+    best_beams = Beams(
+        self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens
+    )  # start with just 1 beam
 
     for _ in tqdm(range(max_new_tokens)):
         t.cuda.empty_cache()
 
         # Generate & filter beams
-        best_beams = best_beams.generate(k=num_beams, no_repeat_ngram_size=no_repeat_ngram_size)
+        best_beams = best_beams.generate(
+            k=num_beams, no_repeat_ngram_size=no_repeat_ngram_size
+        )
         best_beams, best_beams_terminated = best_beams.filter(k=num_beams)
 
         # Add terminated beams to our list, and return early if we have enough
-        final_logprobs_and_completions.extend(best_beams_terminated.logprobs_and_completions)
+        final_logprobs_and_completions.extend(
+            best_beams_terminated.logprobs_and_completions
+        )
 
         if len(final_logprobs_and_completions) >= num_return_sequences:
             return final_logprobs_and_completions[:num_return_sequences]
@@ -888,13 +962,56 @@ print("Testing generate...")
 new_beams = beams.generate(k=3, no_repeat_ngram_size=1)
 new_beams.print()
 
-expected_values = [(-3.1, "When I was a kid"), (-4.8, "When I was a child"), (-4.9, "When I was a little")]
+expected_values = [
+    (-3.1, "When I was a kid"),
+    (-4.8, "When I was a child"),
+    (-4.9, "When I was a little"),
+]
 
 for i, (logprob_sum, completion) in enumerate(new_beams.logprobs_and_completions[:3]):
     assert abs(logprob_sum - expected_values[i][0]) < 0.1, f"{i}"
     assert completion == expected_values[i][1], f"{i}"
 
 print("All tests for `generate` passed!")
+
+print("Testing `filter`...")
+
+best_beams, terminated_beams = new_beams.filter(3)
+best_beams.print()
+
+expected_values = [
+    (-3.1, "When I was a kid"),
+    (-3.2, "When I was growing up"),
+    (-4.6, "When I was in the"),
+]
+
+for i, (logprob_sum, completion) in enumerate(best_beams.logprobs_and_completions):
+    assert abs(logprob_sum - expected_values[i][0]) < 0.1, f"{i}"
+    assert completion == expected_values[i][1], f"{i}"
+
+assert len(terminated_beams.logprobs_and_completions) == 0
+
+print("All tests for `filter` passed!")
+
+print("Testing `no_repeat_ngram_size`...")
+
+new_beams = beams
+for _ in range(5):
+    new_beams = new_beams.generate(k=1)
+new_beams.print(title="Completions with no ngram restriction")
+assert all(
+    "I was" in completion.removeprefix(prompt)
+    for _, completion in new_beams.logprobs_and_completions
+), "Without restriction, all beams should be completed as '...I was...'"
+
+new_beams = beams
+for _ in range(5):
+    new_beams = new_beams.generate(k=1, no_repeat_ngram_size=2)
+new_beams.print(title="Completions with no repeated bigrams")
+assert all(
+    "I was" not in completion.removeprefix(prompt)
+    for _, completion in new_beams.logprobs_and_completions
+), "With no repeated bigrams, no beams should contain a second '...I was...'"
 
 # %%
 
@@ -1062,6 +1179,7 @@ for word in expected_top_10pct:
     assert (
         abs(observed_freq - expected_freq) < 0.01
     ), "Try increasing N if this fails by a small amount."
+
 
 # %%
 @dataclass
