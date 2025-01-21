@@ -97,38 +97,14 @@ layer0_pattern_from_cache = gpt2_cache["pattern", 0]
 
 # YOUR CODE HERE - define `layer0_pattern_from_q_and_k` manually, by manually performing the steps of the attention calculation (dot product, masking, scaling, softmax)
 q = gpt2_cache["q", 0]
-k = gpt2_cache["v", 0]
+k = gpt2_cache["k", 0]
 
 q.shape, k.shape
-attn_logits = einops.einsum(q, k, "seq_q n_h d_q, seq_k n_h d_k -> n_h seq_q seq_k")
+attn_logits = einops.einsum(q, k, "seq_q n_h d, seq_k n_h d -> n_h seq_q seq_k")
 
 upper_t = t.triu(t.ones((q.shape[0], k.shape[0]), dtype=bool), diagonal=1).to(device)
-attn_logits.masked_fill_(upper_t, 1e-9)
-# normalize
-attn_logits_norm = attn_logits / (q.shape[1] ** 0.5)
+attn_logits.masked_fill_(upper_t, -1e9)
+attn_logits_norm = attn_logits / (q.shape[2] ** 0.5)
 
 layer0_pattern_from_q_and_k = attn_logits_norm.softmax(-1)
 t.testing.assert_close(layer0_pattern_from_cache, layer0_pattern_from_q_and_k)
-print("Tests passed!")
-
-# %%
-q.shape
-# %%
-layer0_pattern_from_cache = gpt2_cache["pattern", 0]
-
-q, k = gpt2_cache["q", 0], gpt2_cache["k", 0]
-seq, nhead, headsize = q.shape
-layer0_attn_scores = einops.einsum(q, k, "seqQ n h, seqK n h -> n seqQ seqK")
-
-mask_g = t.triu(t.ones((seq, seq), dtype=t.bool), diagonal=1).to(device)
-
-layer0_attn_scores.masked_fill_(mask_g, -1e9)
-
-normalized_g = (layer0_attn_scores / headsize**0.5)
-layer0_pattern_from_q_and_k = normalized_g.softmax(-1)
-t.testing.assert_close(layer0_pattern_from_cache, layer0_pattern_from_q_and_k)
-
-# %%
-t.testing.assert_close(mask, mask_g)
-
-# %%
