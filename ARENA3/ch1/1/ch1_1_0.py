@@ -30,11 +30,6 @@ device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.i
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"
 section = "part2_intro_to_mech_interp"
-root_dir = next(p for p in Path.cwd().parents if (p / chapter).exists())
-exercises_dir = root_dir / chapter / "exercises"
-section_dir = exercises_dir / section
-if str(exercises_dir) not in sys.path:
-    sys.path.append(str(exercises_dir))
 
 import tests as tests
 from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution, plot_loss_difference
@@ -61,27 +56,79 @@ To try the model the model out, let's find the loss on this paragraph!"""
 loss = gpt2_small(model_description_text, return_type="loss")
 print("Model loss:", loss)
 
+# %%
+print(gpt2_small.to_str_tokens("gpt2"))
+print(gpt2_small.to_str_tokens(["gpt2", "gpt2"]))
+print(gpt2_small.to_tokens("gpt2"))
+print(gpt2_small.to_string([50256, 70, 457, 17]))
+# %%
+
 logits: Tensor = gpt2_small(model_description_text, return_type="logits")
 prediction = logits.argmax(dim=-1).squeeze()[:-1]
 
 # YOUR CODE HERE - get the model's prediction on the text
 # %%
-tokens = gpt2_small.to_tokens(model_description_text).squeeze()[1:]
-
-(prediction == tokens).sum() / (len(prediction))
+tokenized = gpt2_small.to_tokens(model_description_text).squeeze(0)
+# percentage right:
+right = t.sum(prediction == tokenized[1:]) / len(prediction)
+print("Perc. right: ", right)
 # %%
-for i in range(len(tokens)):
-    print("\n\n====")
-    print(gpt2_small.to_string(tokens[:i]) + "..." + gpt2_small.to_string(prediction[i]))
+for i in range(40):
+    print("\n\n---")
+    print(gpt2_small.to_string(tokenized[:i]), "...", gpt2_small.to_string(prediction[i]))
+# %%
+tokenized.shape
+# %%
+tokenized
 # %%
 gpt2_text = "Natural language processing tasks, such as question answering, machine translation, reading comprehension, and summarization, are typically approached with supervised learning on taskspecific datasets."
 gpt2_tokens = gpt2_small.to_tokens(gpt2_text)
 gpt2_logits, gpt2_cache = gpt2_small.run_with_cache(gpt2_tokens, remove_batch_dim=True)
 
 print(type(gpt2_logits), type(gpt2_cache))
+
+# %%
+attn_patterns_from_shorthand = gpt2_cache["pattern", 0]
+attn_patterns_from_full_name = gpt2_cache["blocks.0.attn.hook_pattern"]
+
+t.testing.assert_close(attn_patterns_from_shorthand, attn_patterns_from_full_name)
 # %%
 layer0_pattern_from_cache = gpt2_cache["pattern", 0]
 
 # YOUR CODE HERE - define `layer0_pattern_from_q_and_k` manually, by manually performing the steps of the attention calculation (dot product, masking, scaling, softmax)
+q = gpt2_cache["q", 0]
+k = gpt2_cache["v", 0]
+
+q.shape, k.shape
+attn_logits = einops.einsum(q, k, "seq_q n_h d_q, seq_k n_h d_k -> n_h seq_q seq_k")
+
+upper_t = t.triu(t.ones((q.shape[0], k.shape[0]), dtype=bool), diagonal=1).to(device)
+attn_logits.masked_fill_(upper_t, 1e-9)
+# normalize
+attn_logits_norm = attn_logits / (q.shape[1] ** 0.5)
+
+layer0_pattern_from_q_and_k = attn_logits_norm.softmax(-1)
 t.testing.assert_close(layer0_pattern_from_cache, layer0_pattern_from_q_and_k)
 print("Tests passed!")
+
+# %%
+q.shape
+# %%
+layer0_pattern_from_cache = gpt2_cache["pattern", 0]
+
+q, k = gpt2_cache["q", 0], gpt2_cache["k", 0]
+seq, nhead, headsize = q.shape
+layer0_attn_scores = einops.einsum(q, k, "seqQ n h, seqK n h -> n seqQ seqK")
+
+mask_g = t.triu(t.ones((seq, seq), dtype=t.bool), diagonal=1).to(device)
+
+layer0_attn_scores.masked_fill_(mask_g, -1e9)
+
+normalized_g = (layer0_attn_scores / headsize**0.5)
+layer0_pattern_from_q_and_k = normalized_g.softmax(-1)
+t.testing.assert_close(layer0_pattern_from_cache, layer0_pattern_from_q_and_k)
+
+# %%
+t.testing.assert_close(mask, mask_g)
+
+# %%
