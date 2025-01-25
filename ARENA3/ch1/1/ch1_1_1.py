@@ -205,19 +205,15 @@ def get_log_probs(
     logprobs = logits.log_softmax(dim=-1)
     # We want to get logprobs[b, s, tokens[b, s+1]], in eindex syntax this looks like:
     # correct_logprobs = eindex(logprobs, tokens, "b s [b s+1]")
-    # Indices
     batch_size, seq_length = tokens.shape
-    b = np.arange(batch_size)[:, None]  # Shape: [batch_size, 1]
-    s = np.arange(seq_length - 1)  # Shape: [seq_length - 1]
-
-    # Adjust tokens for s+1 indexing
-    selected_tokens = tokens[:, 1:]  # tokens[b, s+1]
-
+    batch_indices = t.arange(batch_size).unsqueeze(1)  # Shape: [batch_size, 1]
+    sequence_indices = t.arange(seq_length - 1)  # Shape: [seq_length - 1]
+    selected_tokens = tokens[:, 1:]  # Adjust tokens for s+1 indexing tokens[b, s+1]
     # Gather logprobs[b, s, tokens[b, s+1]]
-    correct_logprobs = logprobs[np.arange(batch_size)[:, None], s, selected_tokens]
+    result = logprobs[batch_indices, sequence_indices, selected_tokens]
 
 
-    return correct_logprobs
+    return result
 
 
 seq_len = 50
@@ -232,4 +228,36 @@ print(f"Performance on the first half: {log_probs[:seq_len].mean():.3f}")
 print(f"Performance on the second half: {log_probs[seq_len:].mean():.3f}")
 
 plot_loss_difference(log_probs, rep_str, seq_len)
+# %%
+# YOUR CODE HERE - display the attention patterns stored in `rep_cache`, for each layer
+for layer in range(model.cfg.n_layers):
+    attention_pattern = rep_cache["pattern", layer]
+    display(cv.attention.attention_patterns(tokens=rep_str, attention=attention_pattern))
+# %%
+def induction_attn_detector(cache: ActivationCache) -> list[str]:
+    """
+    Returns a list e.g. ["0.2", "1.4", "1.9"] of "layer.head" which you judge to be induction heads
+
+    Remember - the tokens used to generate rep_cache are (bos_token, *rand_tokens, *rand_tokens)
+    """
+    attn_keys = [key for key in cache.keys() if "hook_pattern" in key]
+
+    attn_ids = []
+    scores = []
+    n_to_take = 5
+    
+    for attn_key in attn_keys:
+        block_id = attn_key.split(".")[1]
+        attn_pattern = cache[attn_key]
+
+        for i_head, mat in enumerate(attn_pattern):
+            seq_length = (mat.shape[0] - 1) // 2
+            weight = mat.diagonal(-(seq_length-1)).mean().item()
+            attn_ids.append(f"{block_id}.{i_head}")
+            scores.append(weight)
+    
+    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
+
+
+print("Induction heads = ", ", ".join(induction_attn_detector(rep_cache)))
 # %%
