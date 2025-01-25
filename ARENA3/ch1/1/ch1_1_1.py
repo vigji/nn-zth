@@ -11,7 +11,8 @@ import numpy as np
 import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
-from einx import einx
+# import eindex # import eindex
+from einindex import index as eindex
 from IPython.display import display
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -38,7 +39,6 @@ from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution,
 t.set_grad_enabled(False)
 
 MAIN = __name__ == "__main__"
-
 # %%
 cfg = HookedTransformerConfig(
     d_model=768,
@@ -94,23 +94,142 @@ def current_attn_detector(cache: ActivationCache) -> list[str]:
     """
     Returns a list e.g. ["0.2", "1.4", "1.9"] of "layer.head" which you judge to be current-token heads
     """
-    raise NotImplementedError()
+    attn_keys = [key for key in cache.keys() if "hook_pattern" in key]
+
+    attn_ids = []
+    scores = []
+    n_to_take = 5
+    for attn_key in attn_keys:
+        block_id = attn_key.split(".")[1]
+        attn_pattern = cache[attn_key]
+
+        for i_head, mat in enumerate(attn_pattern):
+            weight = mat.diagonal().mean().item()
+            attn_ids.append(f"{block_id}.{i_head}")
+            scores.append(weight)
+
+    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
+
 
 
 def prev_attn_detector(cache: ActivationCache) -> list[str]:
     """
     Returns a list e.g. ["0.2", "1.4", "1.9"] of "layer.head" which you judge to be prev-token heads
     """
-    raise NotImplementedError()
+    attn_keys = [key for key in cache.keys() if "hook_pattern" in key]
+
+    attn_ids = []
+    scores = []
+    n_to_take = 5
+    for attn_key in attn_keys:
+        block_id = attn_key.split(".")[1]
+        attn_pattern = cache[attn_key]
+
+        for i_head, mat in enumerate(attn_pattern):
+            weight = mat.diagonal(-1).mean().item()
+            attn_ids.append(f"{block_id}.{i_head}")
+            scores.append(weight)
+    
+    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
 
 
 def first_attn_detector(cache: ActivationCache) -> list[str]:
     """
     Returns a list e.g. ["0.2", "1.4", "1.9"] of "layer.head" which you judge to be first-token heads
     """
-    raise NotImplementedError()
+    attn_keys = [key for key in cache.keys() if "hook_pattern" in key]
+
+    attn_ids = []
+    scores = []
+    n_to_take = 5
+    for attn_key in attn_keys:
+        block_id = attn_key.split(".")[1]
+        attn_pattern = cache[attn_key]
+
+        for i_head, mat in enumerate(attn_pattern):
+            weight = mat[:, 0].mean().item()
+            attn_ids.append(f"{block_id}.{i_head}")
+            scores.append(weight)
+    
+    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
 
 
 print("Heads attending to current token  = ", ", ".join(current_attn_detector(cache)))
 print("Heads attending to previous token = ", ", ".join(prev_attn_detector(cache)))
 print("Heads attending to first token    = ", ", ".join(first_attn_detector(cache)))
+
+# %%
+
+# %%
+def generate_repeated_tokens(
+    model: HookedTransformer, seq_len: int, batch_size: int = 1
+) -> Int[Tensor, "batch_size full_seq_len"]:
+    """
+    Generates a sequence of repeated random tokens
+
+    Outputs are:
+        rep_tokens: [batch_size, 1+2*seq_len]
+    """
+    prefix = (t.ones(batch_size, 1) * model.tokenizer.bos_token_id).long()
+
+    random_seq = t.randint(0, model.cfg.d_vocab, (batch_size, seq_len))
+
+    return t.concat([prefix, random_seq, random_seq], axis=-1)
+
+seq_len = 50
+batch_size = 1
+generate_repeated_tokens(model, seq_len, batch_size)
+# %%
+def run_and_cache_model_repeated_tokens(
+    model: HookedTransformer, seq_len: int, batch_size: int = 1
+) -> tuple[Tensor, Tensor, ActivationCache]:
+    """
+    Generates a sequence of repeated random tokens, and runs the model on it, returning (tokens, logits, cache). This
+    function should use the `generate_repeated_tokens` function above
+
+    Outputs are:
+        rep_tokens: [batch_size, 1+2*seq_len]
+        rep_logits: [batch_size, 1+2*seq_len, d_vocab]
+        rep_cache: The cache of the model run on rep_tokens
+    """
+    tokens_seq = generate_repeated_tokens(model, seq_len, batch_size)
+
+    logits, cache = model.run_with_cache(tokens_seq)
+
+    return tokens_seq, logits, cache
+
+
+def get_log_probs(
+    logits: Float[Tensor, "batch posn d_vocab"], tokens: Int[Tensor, "batch posn"]
+) -> Float[Tensor, "batch posn-1"]:
+    logprobs = logits.log_softmax(dim=-1)
+    # We want to get logprobs[b, s, tokens[b, s+1]], in eindex syntax this looks like:
+    # correct_logprobs = eindex(logprobs, tokens, "b s [b s+1]")
+    # Indices
+    batch_size, seq_length = tokens.shape
+    b = np.arange(batch_size)[:, None]  # Shape: [batch_size, 1]
+    s = np.arange(seq_length - 1)  # Shape: [seq_length - 1]
+
+    # Adjust tokens for s+1 indexing
+    selected_tokens = tokens[:, 1:]  # tokens[b, s+1]
+
+    # Gather logprobs[b, s, tokens[b, s+1]]
+    correct_logprobs = logprobs[np.arange(batch_size)[:, None], s, selected_tokens]
+
+
+    return correct_logprobs
+
+
+seq_len = 50
+batch_size = 1
+(rep_tokens, rep_logits, rep_cache) = run_and_cache_model_repeated_tokens(model, seq_len, batch_size)
+rep_cache.remove_batch_dim()
+rep_str = model.to_str_tokens(rep_tokens)
+model.reset_hooks()
+log_probs = get_log_probs(rep_logits, rep_tokens).squeeze()
+
+print(f"Performance on the first half: {log_probs[:seq_len].mean():.3f}")
+print(f"Performance on the second half: {log_probs[seq_len:].mean():.3f}")
+
+plot_loss_difference(log_probs, rep_str, seq_len)
+# %%
