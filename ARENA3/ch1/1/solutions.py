@@ -12,7 +12,6 @@ import numpy as np
 import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
-from eindex import eindex
 from IPython.display import display
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -26,18 +25,11 @@ from transformer_lens import (
 )
 from transformer_lens.hook_points import HookPoint
 
+
 device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
 
-# Make sure exercises are in the path
-chapter = "chapter1_transformer_interp"
-section = "part2_intro_to_mech_interp"
-root_dir = next(p for p in Path.cwd().parents if (p / chapter).exists())
-exercises_dir = root_dir / chapter / "exercises"
-section_dir = exercises_dir / section
-if str(exercises_dir) not in sys.path:
-    sys.path.append(str(exercises_dir))
 
-import part2_intro_to_mech_interp.tests as tests
+import tests
 from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution, plot_loss_difference
 
 # Saves computation time, since we don't need it for the contents of this notebook
@@ -274,8 +266,16 @@ def get_log_probs(
 ) -> Float[Tensor, "batch posn-1"]:
     logprobs = logits.log_softmax(dim=-1)
     # We want to get logprobs[b, s, tokens[b, s+1]], in eindex syntax this looks like:
-    correct_logprobs = eindex(logprobs, tokens, "b s [b s+1]")
-    return correct_logprobs
+    # correct_logprobs = eindex(logprobs, tokens, "b s [b s+1]")
+    batch_size, seq_length = tokens.shape
+    batch_indices = t.arange(batch_size).unsqueeze(1)  # Shape: [batch_size, 1]
+    sequence_indices = t.arange(seq_length - 1)  # Shape: [seq_length - 1]
+    selected_tokens = tokens[:, 1:]  # Adjust tokens for s+1 indexing tokens[b, s+1]
+    # Gather logprobs[b, s, tokens[b, s+1]]
+    result = logprobs[batch_indices, sequence_indices, selected_tokens]
+
+
+    return result
 
 
 if MAIN:

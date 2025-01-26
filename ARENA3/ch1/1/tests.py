@@ -11,7 +11,7 @@ def test_get_ablation_scores(
     model: HookedTransformer,
     rep_tokens: Float[Tensor, "batch seq"],
 ):
-    import part2_intro_to_mech_interp.solutions as solutions
+    import solutions as solutions
 
     ablation_scores_expected = solutions.get_ablation_scores(model, rep_tokens)
 
@@ -34,7 +34,7 @@ def test_full_OV_circuit(OV_circuit: FactoredMatrix, model: HookedTransformer, l
 
 
 def test_pos_by_pos_pattern(pattern: Float[Tensor, "n_ctx n_ctx"], model: HookedTransformer, layer: int, head: int):
-    import part2_intro_to_mech_interp.solutions as solutions
+    import solutions as solutions
 
     W_pos = model.W_pos
     W_QK = model.W_Q[layer, head] @ model.W_K[layer, head].T
@@ -49,7 +49,7 @@ def test_pos_by_pos_pattern(pattern: Float[Tensor, "n_ctx n_ctx"], model: Hooked
 
 
 def test_decompose_attn_scores(decompose_attn_scores: Callable, q: t.Tensor, k: t.Tensor):
-    import part2_intro_to_mech_interp.solutions as solutions
+    import solutions as solutions
 
     decomposed_scores = decompose_attn_scores(q, k)
     decomposed_scores_expected = solutions.decompose_attn_scores(q, k)
@@ -60,7 +60,7 @@ def test_decompose_attn_scores(decompose_attn_scores: Callable, q: t.Tensor, k: 
 
 
 def test_find_K_comp_full_circuit(find_K_comp_full_circuit: Callable, model: HookedTransformer):
-    import part2_intro_to_mech_interp.solutions as solutions
+    import solutions as solutions
 
     K_comp_full_circuit: FactoredMatrix = find_K_comp_full_circuit(model, 7, 4)
     K_comp_full_circuit_expected: FactoredMatrix = solutions.find_K_comp_full_circuit(model, 7, 4)

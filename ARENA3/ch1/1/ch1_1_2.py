@@ -11,8 +11,6 @@ import numpy as np
 import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
-# import eindex # import eindex
-from einindex import index as eindex
 from IPython.display import display
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -32,7 +30,7 @@ device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.i
 chapter = "chapter1_transformer_interp"
 section = "part2_intro_to_mech_interp"
 
-import tests as tests
+import tests
 from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution, plot_loss_difference
 
 # Saves computation time, since we don't need it for the contents of this notebook
@@ -244,6 +242,7 @@ gpt2_small.run_with_hooks(
 text = "We think that powerful, significantly superhuman machine intelligence is more likely than not to be created this century. If current machine learning techniques were scaled up to this level, we think they would by default produce systems that are deceptive or manipulative, and that no solid plans are known for how to avoid this."
 logits, cache = model.run_with_cache(text, remove_batch_dim=True)
 str_tokens = model.to_str_tokens(text)
+
 tokens = model.to_tokens(text)
 # %%
 
@@ -300,4 +299,82 @@ l2_results = rep_cache["result", 1]
 logit_attr = logit_attribution(embed, l1_results, l2_results, model.W_U, rep_tokens.squeeze())
 
 plot_logit_attribution(model, logit_attr, rep_tokens, title="Logit attribution (repeat prompt)")
+# %%
+
+def head_zero_ablation_hook(
+    z: Float[Tensor, "batch seq n_heads d_head"],
+    hook: HookPoint,
+    head_index_to_ablate: int,
+) -> None:
+    z[:, :, head_index_to_ablate, :] = 0
+
+    return z
+
+
+def get_ablation_scores(
+    model: HookedTransformer,
+    tokens: Int[Tensor, "batch seq"],
+    ablation_function: Callable = head_zero_ablation_hook,
+) -> Float[Tensor, "n_layers n_heads"]:
+    """
+    Returns a tensor of shape (n_layers, n_heads) containing the increase in cross entropy loss from ablating the output
+    of each head.
+    """
+    # Initialize an object to store the ablation scores
+    ablation_scores = t.zeros((model.cfg.n_layers, model.cfg.n_heads), device=model.cfg.device)
+
+    # Calculating loss without any ablation, to act as a baseline
+    model.reset_hooks()
+    seq_len = (tokens.shape[1] - 1) // 2
+    logits = model(tokens, return_type="logits")
+    loss_no_ablation = -get_log_probs(logits, tokens)[:, -(seq_len - 1) :].mean()
+
+    for layer in tqdm(range(model.cfg.n_layers)):
+        for head in range(model.cfg.n_heads):
+            temp_hook_fn = functools.partial(head_zero_ablation_hook, head_index_to_ablate=head)
+            logits = model.run_with_hooks(tokens, fwd_hooks=[(utils.get_act_name("z", layer), temp_hook_fn)])
+            loss_ablation = -get_log_probs(logits, tokens)[:, -(seq_len - 1) :].mean()
+
+            ablation_scores[layer, head] = loss_ablation - loss_no_ablation
+
+            # raise NotImplementedError()
+        
+    utils.get_act_name("z", layer)
+
+    return ablation_scores
+
+
+ablation_scores = get_ablation_scores(model, rep_tokens)
+tests.test_get_ablation_scores(ablation_scores, model, rep_tokens)
+# %%
+utils.get_act_name("z", 0)
+# %%
+imshow(
+    ablation_scores,
+    labels={"x": "Head", "y": "Layer", "color": "Logit diff"},
+    title="Loss Difference After Ablating Heads",
+    text_auto=".2f",
+    width=900,
+    height=350,
+)
+# %%
+def head_mean_ablation_hook(
+    z: Float[Tensor, "batch seq n_heads d_head"],
+    hook: HookPoint,
+    head_index_to_ablate: int,
+) -> None:
+    z[:, :, head_index_to_ablate, :] = z[:, :, head_index_to_ablate, :].mean(dim=0, keepdim=True)
+
+
+rep_tokens_batch = run_and_cache_model_repeated_tokens(model, seq_len=50, batch_size=20)[0]
+mean_ablation_scores = get_ablation_scores(model, rep_tokens_batch, ablation_function=head_zero_ablation_hook)
+
+imshow(
+    mean_ablation_scores,
+    labels={"x": "Head", "y": "Layer", "color": "Logit diff"},
+    title="Loss Difference After Ablating Heads",
+    text_auto=".2f",
+    width=900,
+    height=350,
+)
 # %%
