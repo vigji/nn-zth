@@ -11,6 +11,7 @@ import numpy as np
 import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
+
 # import eindex # import eindex
 from einindex import index as eindex
 from IPython.display import display
@@ -26,20 +27,30 @@ from transformer_lens import (
 )
 from transformer_lens.hook_points import HookPoint
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda" if t.cuda.is_available() else "cpu"
+)
 
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"
 section = "part2_intro_to_mech_interp"
 
 import tests as tests
-from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution, plot_loss_difference
+from plotly_utils import (
+    hist,
+    imshow,
+    plot_comp_scores,
+    plot_logit_attribution,
+    plot_loss_difference,
+)
 
 # Saves computation time, since we don't need it for the contents of this notebook
 t.set_grad_enabled(False)
 
 MAIN = __name__ == "__main__"
-# %%
+# %%
 cfg = HookedTransformerConfig(
     d_model=768,
     d_head=64,
@@ -78,17 +89,24 @@ attention_pattern = cache["pattern", 0]
 str_tokens = model.to_str_tokens(text)
 
 print("Layer 0 Head Attention Patterns:")
-display(cv.attention.attention_patterns(
+display(
+    cv.attention.attention_patterns(
         tokens=str_tokens,
-        attention=attention_pattern,))
-        #attention_head_names=[f"L0H{i}" for i in range(12)],)
+        attention=attention_pattern,
+    )
+)
+# attention_head_names=[f"L0H{i}" for i in range(12)],)
 # %%
 attention_pattern = cache["pattern", 1]
 print("Layer 0 Head Attention Patterns:")
-display(cv.attention.attention_patterns(
+display(
+    cv.attention.attention_patterns(
         tokens=str_tokens,
-        attention=attention_pattern,))
+        attention=attention_pattern,
+    )
+)
 # %%
+
 
 def current_attn_detector(cache: ActivationCache) -> list[str]:
     """
@@ -108,8 +126,7 @@ def current_attn_detector(cache: ActivationCache) -> list[str]:
             attn_ids.append(f"{block_id}.{i_head}")
             scores.append(weight)
 
-    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
-
+    return [attn_ids[idx] for idx in np.argsort(scores)[: -n_to_take - 1 : -1]]
 
 
 def prev_attn_detector(cache: ActivationCache) -> list[str]:
@@ -129,8 +146,8 @@ def prev_attn_detector(cache: ActivationCache) -> list[str]:
             weight = mat.diagonal(-1).mean().item()
             attn_ids.append(f"{block_id}.{i_head}")
             scores.append(weight)
-    
-    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
+
+    return [attn_ids[idx] for idx in np.argsort(scores)[: -n_to_take - 1 : -1]]
 
 
 def first_attn_detector(cache: ActivationCache) -> list[str]:
@@ -150,8 +167,8 @@ def first_attn_detector(cache: ActivationCache) -> list[str]:
             weight = mat[:, 0].mean().item()
             attn_ids.append(f"{block_id}.{i_head}")
             scores.append(weight)
-    
-    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
+
+    return [attn_ids[idx] for idx in np.argsort(scores)[: -n_to_take - 1 : -1]]
 
 
 print("Heads attending to current token  = ", ", ".join(current_attn_detector(cache)))
@@ -159,6 +176,7 @@ print("Heads attending to previous token = ", ", ".join(prev_attn_detector(cache
 print("Heads attending to first token    = ", ", ".join(first_attn_detector(cache)))
 
 # %%
+
 
 # %%
 def generate_repeated_tokens(
@@ -176,9 +194,12 @@ def generate_repeated_tokens(
 
     return t.concat([prefix, random_seq, random_seq], axis=-1)
 
+
 seq_len = 50
 batch_size = 1
 generate_repeated_tokens(model, seq_len, batch_size)
+
+
 # %%
 def run_and_cache_model_repeated_tokens(
     model: HookedTransformer, seq_len: int, batch_size: int = 1
@@ -212,13 +233,14 @@ def get_log_probs(
     # Gather logprobs[b, s, tokens[b, s+1]]
     result = logprobs[batch_indices, sequence_indices, selected_tokens]
 
-
     return result
 
 
 seq_len = 50
 batch_size = 1
-(rep_tokens, rep_logits, rep_cache) = run_and_cache_model_repeated_tokens(model, seq_len, batch_size)
+(rep_tokens, rep_logits, rep_cache) = run_and_cache_model_repeated_tokens(
+    model, seq_len, batch_size
+)
 rep_cache.remove_batch_dim()
 rep_str = model.to_str_tokens(rep_tokens)
 model.reset_hooks()
@@ -232,7 +254,11 @@ plot_loss_difference(log_probs, rep_str, seq_len)
 # YOUR CODE HERE - display the attention patterns stored in `rep_cache`, for each layer
 for layer in range(model.cfg.n_layers):
     attention_pattern = rep_cache["pattern", layer]
-    display(cv.attention.attention_patterns(tokens=rep_str, attention=attention_pattern))
+    display(
+        cv.attention.attention_patterns(tokens=rep_str, attention=attention_pattern)
+    )
+
+
 # %%
 def induction_attn_detector(cache: ActivationCache) -> list[str]:
     """
@@ -245,18 +271,18 @@ def induction_attn_detector(cache: ActivationCache) -> list[str]:
     attn_ids = []
     scores = []
     n_to_take = 5
-    
+
     for attn_key in attn_keys:
         block_id = attn_key.split(".")[1]
         attn_pattern = cache[attn_key]
 
         for i_head, mat in enumerate(attn_pattern):
             seq_length = (mat.shape[0] - 1) // 2
-            weight = mat.diagonal(-(seq_length-1)).mean().item()
+            weight = mat.diagonal(-(seq_length - 1)).mean().item()
             attn_ids.append(f"{block_id}.{i_head}")
             scores.append(weight)
-    
-    return [attn_ids[idx] for idx in np.argsort(scores)[:-n_to_take-1:-1]]
+
+    return [attn_ids[idx] for idx in np.argsort(scores)[: -n_to_take - 1 : -1]]
 
 
 print("Induction heads = ", ", ".join(induction_attn_detector(rep_cache)))

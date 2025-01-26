@@ -24,20 +24,30 @@ from transformer_lens import (
 )
 from transformer_lens.hook_points import HookPoint
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda" if t.cuda.is_available() else "cpu"
+)
 
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"
 section = "part2_intro_to_mech_interp"
 
 import tests
-from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution, plot_loss_difference
+from plotly_utils import (
+    hist,
+    imshow,
+    plot_comp_scores,
+    plot_logit_attribution,
+    plot_loss_difference,
+)
 
 # Saves computation time, since we don't need it for the contents of this notebook
 t.set_grad_enabled(False)
 
 MAIN = __name__ == "__main__"
-# %%
+# %%
 cfg = HookedTransformerConfig(
     d_model=768,
     d_head=64,
@@ -67,6 +77,7 @@ pretrained_weights = t.load(weights_path, map_location=device, weights_only=True
 model.load_state_dict(pretrained_weights)
 # %%
 
+
 # %%
 def generate_repeated_tokens(
     model: HookedTransformer, seq_len: int, batch_size: int = 1
@@ -83,9 +94,12 @@ def generate_repeated_tokens(
 
     return t.concat([prefix, random_seq, random_seq], axis=-1)
 
+
 seq_len = 50
 batch_size = 1
 generate_repeated_tokens(model, seq_len, batch_size)
+
+
 # %%
 def run_and_cache_model_repeated_tokens(
     model: HookedTransformer, seq_len: int, batch_size: int = 1
@@ -119,13 +133,14 @@ def get_log_probs(
     # Gather logprobs[b, s, tokens[b, s+1]]
     result = logprobs[batch_indices, sequence_indices, selected_tokens]
 
-
     return result
 
 
 seq_len = 50
 batch_size = 1
-(rep_tokens, rep_logits, rep_cache) = run_and_cache_model_repeated_tokens(model, seq_len, batch_size)
+(rep_tokens, rep_logits, rep_cache) = run_and_cache_model_repeated_tokens(
+    model, seq_len, batch_size
+)
 rep_cache.remove_batch_dim()
 rep_str = model.to_str_tokens(rep_tokens)
 model.reset_hooks()
@@ -133,19 +148,17 @@ log_probs = get_log_probs(rep_logits, rep_tokens).squeeze()
 
 
 def hook_function(
-    attn_pattern: Float[Tensor, "batch heads seq_len seq_len"],
-    hook: HookPoint
-): # -> Tensor["batch", "heads", "seq_len", "seq_len"]:
+    attn_pattern: Float[Tensor, "batch heads seq_len seq_len"], hook: HookPoint
+):  # -> Tensor["batch", "heads", "seq_len", "seq_len"]:
 
     # modify attn_pattern (can be inplace)
     return attn_pattern
 
+
 loss = model.run_with_hooks(
     rep_tokens,
     return_type="loss",
-    fwd_hooks=[
-        ('blocks.1.attn.hook_pattern', hook_function)
-    ]
+    fwd_hooks=[("blocks.1.attn.hook_pattern", hook_function)],
 )
 # %%
 seq_len = 50
@@ -154,16 +167,20 @@ rep_tokens_10 = generate_repeated_tokens(model, seq_len, batch_size)
 
 # We make a tensor to store the induction score for each head.
 # We put it on the model's device to avoid needing to move things between the GPU and CPU, which can be slow.
-induction_score_store = t.zeros((model.cfg.n_layers, model.cfg.n_heads), device=model.cfg.device)
+induction_score_store = t.zeros(
+    (model.cfg.n_layers, model.cfg.n_heads), device=model.cfg.device
+)
 
 
-def induction_score_hook(pattern: Float[Tensor, "batch head_index dest_pos source_pos"], hook: HookPoint):
+def induction_score_hook(
+    pattern: Float[Tensor, "batch head_index dest_pos source_pos"], hook: HookPoint
+):
     """
     Calculates the induction score, and stores it in the [layer, head] position of the `induction_score_store` tensor.
     """
     i_layer = int(hook.name.split(".")[1])
     seq_length = (pattern.shape[-1] - 1) // 2
-    scores = pattern.diagonal(-(seq_length-1), dim1=2, dim2=3).mean((0, 2))
+    scores = pattern.diagonal(-(seq_length - 1), dim1=2, dim2=3).mean((0, 2))
     induction_score_store[i_layer, :] = scores
 
     return pattern
@@ -191,9 +208,14 @@ imshow(
 # %%
 gpt2_small: HookedTransformer = HookedTransformer.from_pretrained("gpt2-small")
 
-induction_score_store = t.zeros((gpt2_small.cfg.n_layers, gpt2_small.cfg.n_heads), device=model.cfg.device)
+induction_score_store = t.zeros(
+    (gpt2_small.cfg.n_layers, gpt2_small.cfg.n_heads), device=model.cfg.device
+)
 
-def induction_score_hook(pattern: Float[Tensor, "batch head_index dest_pos source_pos"], hook: HookPoint):
+
+def induction_score_hook(
+    pattern: Float[Tensor, "batch head_index dest_pos source_pos"], hook: HookPoint
+):
     """
     Calculates the induction score, and stores it in the [layer, head] position of the `induction_score_store` tensor.
     """
@@ -203,6 +225,7 @@ def induction_score_hook(pattern: Float[Tensor, "batch head_index dest_pos sourc
     induction_score_store[i_layer, :] = scores
 
     return pattern
+
 
 # Run with hooks (this is where we write to the `induction_score_store` tensor`)
 gpt2_small.run_with_hooks(
@@ -219,16 +242,22 @@ imshow(
     width=900,
     height=350,
     zmin=-1,
-    zmax=1
+    zmax=1,
 )
 # %%
+
 
 def visualize_pattern_hook(
     pattern: Float[Tensor, "batch head_index dest_pos source_pos"],
     hook: HookPoint,
 ):
     print("Layer: ", hook.layer())
-    display(cv.attention.attention_patterns(tokens=gpt2_small.to_str_tokens(rep_tokens[0]), attention=pattern.mean(0)))
+    display(
+        cv.attention.attention_patterns(
+            tokens=gpt2_small.to_str_tokens(rep_tokens[0]), attention=pattern.mean(0)
+        )
+    )
+
 
 # %%
 # Run with hooks (this is where we write to the `induction_score_store` tensor`)
@@ -245,6 +274,7 @@ str_tokens = model.to_str_tokens(text)
 
 tokens = model.to_tokens(text)
 # %%
+
 
 def logit_attribution(
     embed: Float[Tensor, "seq d_model"],
@@ -271,10 +301,19 @@ def logit_attribution(
     """
     W_U_correct_tokens = W_U[:, tokens[1:]]
     print(tokens.shape, W_U_correct_tokens.shape, embed.shape, l1_results.shape)
-    return t.concat([(einops.einsum(W_U_correct_tokens, embed[:-1, :], "d b, b d -> b").unsqueeze(-1)),
-                      einops.einsum(W_U_correct_tokens, l1_results[:-1, :], "d b, b h d -> b h"),
-                      einops.einsum(W_U_correct_tokens, l2_results[:-1, :], "d b, b h d -> b h"),
-                    ], axis=-1)
+    return t.concat(
+        [
+            (
+                einops.einsum(
+                    W_U_correct_tokens, embed[:-1, :], "d b, b d -> b"
+                ).unsqueeze(-1)
+            ),
+            einops.einsum(W_U_correct_tokens, l1_results[:-1, :], "d b, b h d -> b h"),
+            einops.einsum(W_U_correct_tokens, l2_results[:-1, :], "d b, b h d -> b h"),
+        ],
+        axis=-1,
+    )
+
 
 with t.inference_mode():
     embed = cache["embed"]
@@ -289,17 +328,26 @@ with t.inference_mode():
 embed = cache["embed"]
 l1_results = cache["result", 0]
 l2_results = cache["result", 1]
-logit_attr = logit_attribution(embed, l1_results, l2_results, model.W_U, tokens.squeeze())
+logit_attr = logit_attribution(
+    embed, l1_results, l2_results, model.W_U, tokens.squeeze()
+)
 
-plot_logit_attribution(model, logit_attr, tokens, title="Logit attribution (demo prompt)")
+plot_logit_attribution(
+    model, logit_attr, tokens, title="Logit attribution (demo prompt)"
+)
 # %%
 embed = rep_cache["embed"]
 l1_results = rep_cache["result", 0]
 l2_results = rep_cache["result", 1]
-logit_attr = logit_attribution(embed, l1_results, l2_results, model.W_U, rep_tokens.squeeze())
+logit_attr = logit_attribution(
+    embed, l1_results, l2_results, model.W_U, rep_tokens.squeeze()
+)
 
-plot_logit_attribution(model, logit_attr, rep_tokens, title="Logit attribution (repeat prompt)")
+plot_logit_attribution(
+    model, logit_attr, rep_tokens, title="Logit attribution (repeat prompt)"
+)
 # %%
+
 
 def head_zero_ablation_hook(
     z: Float[Tensor, "batch seq n_heads d_head"],
@@ -321,7 +369,9 @@ def get_ablation_scores(
     of each head.
     """
     # Initialize an object to store the ablation scores
-    ablation_scores = t.zeros((model.cfg.n_layers, model.cfg.n_heads), device=model.cfg.device)
+    ablation_scores = t.zeros(
+        (model.cfg.n_layers, model.cfg.n_heads), device=model.cfg.device
+    )
 
     # Calculating loss without any ablation, to act as a baseline
     model.reset_hooks()
@@ -331,14 +381,18 @@ def get_ablation_scores(
 
     for layer in tqdm(range(model.cfg.n_layers)):
         for head in range(model.cfg.n_heads):
-            temp_hook_fn = functools.partial(head_zero_ablation_hook, head_index_to_ablate=head)
-            logits = model.run_with_hooks(tokens, fwd_hooks=[(utils.get_act_name("z", layer), temp_hook_fn)])
+            temp_hook_fn = functools.partial(
+                head_zero_ablation_hook, head_index_to_ablate=head
+            )
+            logits = model.run_with_hooks(
+                tokens, fwd_hooks=[(utils.get_act_name("z", layer), temp_hook_fn)]
+            )
             loss_ablation = -get_log_probs(logits, tokens)[:, -(seq_len - 1) :].mean()
 
             ablation_scores[layer, head] = loss_ablation - loss_no_ablation
 
             # raise NotImplementedError()
-        
+
     utils.get_act_name("z", layer)
 
     return ablation_scores
@@ -357,17 +411,25 @@ imshow(
     width=900,
     height=350,
 )
+
+
 # %%
 def head_mean_ablation_hook(
     z: Float[Tensor, "batch seq n_heads d_head"],
     hook: HookPoint,
     head_index_to_ablate: int,
 ) -> None:
-    z[:, :, head_index_to_ablate, :] = z[:, :, head_index_to_ablate, :].mean(dim=0, keepdim=True)
+    z[:, :, head_index_to_ablate, :] = z[:, :, head_index_to_ablate, :].mean(
+        dim=0, keepdim=True
+    )
 
 
-rep_tokens_batch = run_and_cache_model_repeated_tokens(model, seq_len=50, batch_size=20)[0]
-mean_ablation_scores = get_ablation_scores(model, rep_tokens_batch, ablation_function=head_zero_ablation_hook)
+rep_tokens_batch = run_and_cache_model_repeated_tokens(
+    model, seq_len=50, batch_size=20
+)[0]
+mean_ablation_scores = get_ablation_scores(
+    model, rep_tokens_batch, ablation_function=head_zero_ablation_hook
+)
 
 imshow(
     mean_ablation_scores,

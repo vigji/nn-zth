@@ -25,14 +25,24 @@ from transformer_lens import (
 )
 from transformer_lens.hook_points import HookPoint
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda" if t.cuda.is_available() else "cpu"
+)
 
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"
 section = "part2_intro_to_mech_interp"
 
 import tests as tests
-from plotly_utils import hist, imshow, plot_comp_scores, plot_logit_attribution, plot_loss_difference
+from plotly_utils import (
+    hist,
+    imshow,
+    plot_comp_scores,
+    plot_logit_attribution,
+    plot_loss_difference,
+)
 
 # Saves computation time, since we don't need it for the contents of this notebook
 t.set_grad_enabled(False)
@@ -75,7 +85,9 @@ print("Perc. right: ", right)
 # %%
 for i in range(40):
     print("\n\n---")
-    print(gpt2_small.to_string(tokenized[:i]), "...", gpt2_small.to_string(prediction[i]))
+    print(
+        gpt2_small.to_string(tokenized[:i]), "...", gpt2_small.to_string(prediction[i])
+    )
 # %%
 tokenized.shape
 # %%
@@ -109,7 +121,7 @@ attn_logits_norm = attn_logits / (q.shape[2] ** 0.5)
 layer0_pattern_from_q_and_k = attn_logits_norm.softmax(-1)
 t.testing.assert_close(layer0_pattern_from_cache, layer0_pattern_from_q_and_k)
 
-# %%
+# %%
 
 print(type(gpt2_cache))
 attention_pattern = gpt2_cache["pattern", 0]
@@ -121,22 +133,25 @@ display(
     cv.attention.attention_patterns(
         tokens=gpt2_str_tokens,
         attention=attention_pattern,
-        #attention_head_names=[f"L0H{i}" for i in range(12)],
+        # attention_head_names=[f"L0H{i}" for i in range(12)],
     )
 )
 
 # %%
-neuron_activations_for_all_layers = t.stack([
-    gpt2_cache["post", layer] for layer in range(gpt2_small.cfg.n_layers)
-], dim=1)
+neuron_activations_for_all_layers = t.stack(
+    [gpt2_cache["post", layer] for layer in range(gpt2_small.cfg.n_layers)], dim=1
+)
 # shape = (seq_pos, layers, neurons)
 
 cv.activations.text_neuron_activations(
-    tokens=gpt2_str_tokens,
-    activations=neuron_activations_for_all_layers
+    tokens=gpt2_str_tokens, activations=neuron_activations_for_all_layers
 )
 # %%
-neuron_activations_for_all_layers_rearranged = utils.to_numpy(einops.rearrange(neuron_activations_for_all_layers, "seq layers neurons -> 1 layers seq neurons"))
+neuron_activations_for_all_layers_rearranged = utils.to_numpy(
+    einops.rearrange(
+        neuron_activations_for_all_layers, "seq layers neurons -> 1 layers seq neurons"
+    )
+)
 
 cv.topk_tokens.topk_tokens(
     # Some weird indexing required here ¯\_(ツ)_/¯
@@ -145,6 +160,6 @@ cv.topk_tokens.topk_tokens(
     max_k=7,
     first_dimension_name="Layer",
     third_dimension_name="Neuron",
-    first_dimension_labels=list(range(12))
+    first_dimension_labels=list(range(12)),
 )
 # %%

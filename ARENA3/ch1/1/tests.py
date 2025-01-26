@@ -20,7 +20,9 @@ def test_get_ablation_scores(
     print("All tests in `test_get_ablation_scores` passed!")
 
 
-def test_full_OV_circuit(OV_circuit: FactoredMatrix, model: HookedTransformer, layer: int, head: int):
+def test_full_OV_circuit(
+    OV_circuit: FactoredMatrix, model: HookedTransformer, layer: int, head: int
+):
     W_E = model.W_E
     W_OV = FactoredMatrix(model.W_V[layer, head], model.W_O[layer, head])
     W_U = model.W_U
@@ -28,12 +30,19 @@ def test_full_OV_circuit(OV_circuit: FactoredMatrix, model: HookedTransformer, l
     OV_circuit_expected = (W_E @ W_OV) @ W_U
     assert isinstance(OV_circuit_expected, FactoredMatrix)
 
-    t.testing.assert_close(OV_circuit.get_corner(20), OV_circuit_expected.get_corner(20))
+    t.testing.assert_close(
+        OV_circuit.get_corner(20), OV_circuit_expected.get_corner(20)
+    )
 
     print("All tests in `test_full_OV_circuit` passed!")
 
 
-def test_pos_by_pos_pattern(pattern: Float[Tensor, "n_ctx n_ctx"], model: HookedTransformer, layer: int, head: int):
+def test_pos_by_pos_pattern(
+    pattern: Float[Tensor, "n_ctx n_ctx"],
+    model: HookedTransformer,
+    layer: int,
+    head: int,
+):
     import solutions as solutions
 
     W_pos = model.W_pos
@@ -48,7 +57,9 @@ def test_pos_by_pos_pattern(pattern: Float[Tensor, "n_ctx n_ctx"], model: Hooked
     print("All tests in `test_full_OV_circuit` passed!")
 
 
-def test_decompose_attn_scores(decompose_attn_scores: Callable, q: t.Tensor, k: t.Tensor):
+def test_decompose_attn_scores(
+    decompose_attn_scores: Callable, q: t.Tensor, k: t.Tensor
+):
     import solutions as solutions
 
     decomposed_scores = decompose_attn_scores(q, k)
@@ -59,13 +70,19 @@ def test_decompose_attn_scores(decompose_attn_scores: Callable, q: t.Tensor, k: 
     print("All tests in `test_decompose_attn_scores` passed!")
 
 
-def test_find_K_comp_full_circuit(find_K_comp_full_circuit: Callable, model: HookedTransformer):
+def test_find_K_comp_full_circuit(
+    find_K_comp_full_circuit: Callable, model: HookedTransformer
+):
     import solutions as solutions
 
     K_comp_full_circuit: FactoredMatrix = find_K_comp_full_circuit(model, 7, 4)
-    K_comp_full_circuit_expected: FactoredMatrix = solutions.find_K_comp_full_circuit(model, 7, 4)
+    K_comp_full_circuit_expected: FactoredMatrix = solutions.find_K_comp_full_circuit(
+        model, 7, 4
+    )
 
-    assert isinstance(K_comp_full_circuit, FactoredMatrix), "Should return a FactoredMatrix object!"
+    assert isinstance(
+        K_comp_full_circuit, FactoredMatrix
+    ), "Should return a FactoredMatrix object!"
     t.testing.assert_close(
         K_comp_full_circuit.get_corner(20),
         K_comp_full_circuit_expected.get_corner(20),

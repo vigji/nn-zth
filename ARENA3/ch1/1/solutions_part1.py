@@ -32,7 +32,9 @@ if str(exercises_dir := Path(__file__).parent.parent) not in sys.path:
 import tests as tests
 
 device = t.device(
-    "mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu"
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -51,7 +53,9 @@ if MAIN:
 
 if MAIN:
     assert isinstance(reference_gpt2.tokenizer, PreTrainedTokenizerFast)
-    sorted_vocab = sorted(list(reference_gpt2.tokenizer.vocab.items()), key=lambda n: n[1])
+    sorted_vocab = sorted(
+        list(reference_gpt2.tokenizer.vocab.items()), key=lambda n: n[1]
+    )
     print(sorted_vocab[:20])
     print()
     print(sorted_vocab[250:270])
@@ -80,7 +84,9 @@ if MAIN:
     probs = logits.softmax(dim=-1)
     print(probs.shape)
 
-    most_likely_next_tokens = reference_gpt2.tokenizer.batch_decode(logits.argmax(dim=-1)[0])
+    most_likely_next_tokens = reference_gpt2.tokenizer.batch_decode(
+        logits.argmax(dim=-1)[0]
+    )
     print(list(zip(reference_gpt2.to_str_tokens(tokens), most_likely_next_tokens)))
 
     next_token = logits[0, -1].argmax(dim=-1)  # type: ignore
@@ -245,7 +251,9 @@ class PosEmbed(nn.Module):
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_model"]:
         batch, seq_len = tokens.shape
-        return einops.repeat(self.W_pos[:seq_len], "seq d_model -> batch seq d_model", batch=batch)
+        return einops.repeat(
+            self.W_pos[:seq_len], "seq d_model -> batch seq d_model", batch=batch
+        )
 
 
 if MAIN:
@@ -290,7 +298,9 @@ class Attention(nn.Module):
         Applies a causal mask to attention scores, and returns masked scores.
         """
         # Define a mask that is True for all positions we want to set probabilities to zero for
-        all_ones = t.ones(attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device)
+        all_ones = t.ones(
+            attn_scores.size(-2), attn_scores.size(-1), device=attn_scores.device
+        )
         mask = t.triu(all_ones, diagonal=1).bool()
         # Apply the mask to attention scores, then return the masked scores
         attn_scores.masked_fill_(mask, self.IGNORE)
@@ -359,7 +369,9 @@ class Attention(nn.Module):
 if MAIN:
     tests.test_causal_mask(Attention.apply_causal_mask)
     rand_float_test(Attention, [2, 4, 768])
-    load_gpt2_test(Attention, reference_gpt2.blocks[0].attn, cache["normalized", 0, "ln1"])
+    load_gpt2_test(
+        Attention, reference_gpt2.blocks[0].attn, cache["normalized", 0, "ln1"]
+    )
 
 
 # %%
@@ -390,7 +402,9 @@ class MLP(nn.Module):
         post = gelu_new(pre)
         mlp_out = (
             einops.einsum(
-                post, self.W_out, "batch position d_mlp, d_mlp d_model -> batch position d_model"
+                post,
+                self.W_out,
+                "batch position d_mlp, d_mlp d_model -> batch position d_model",
             )
             + self.b_out
         )
@@ -463,7 +477,9 @@ class DemoTransformer(nn.Module):
         self.cfg = cfg
         self.embed = Embed(cfg)
         self.pos_embed = PosEmbed(cfg)
-        self.blocks = nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)])
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(cfg) for _ in range(cfg.n_layers)]
+        )
         self.ln_final = LayerNorm(cfg)
         self.unembed = Unembed(cfg)
 
@@ -508,8 +524,12 @@ def get_log_probs(
 if MAIN:
     pred_log_probs = get_log_probs(demo_logits, tokens)
     print(f"Avg cross entropy loss: {-pred_log_probs.mean():.4f}")
-    print(f"Avg cross entropy loss for uniform distribution: {math.log(demo_gpt2.cfg.d_vocab):4f}")
-    print(f"Avg probability assigned to correct token: {pred_log_probs.exp().mean():4f}")
+    print(
+        f"Avg cross entropy loss for uniform distribution: {math.log(demo_gpt2.cfg.d_vocab):4f}"
+    )
+    print(
+        f"Avg probability assigned to correct token: {pred_log_probs.exp().mean():4f}"
+    )
 
 # %%
 
@@ -561,7 +581,9 @@ if MAIN:
 
 
 if MAIN:
-    dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns("meta")
+    dataset = datasets.load_dataset("NeelNanda/pile-10k", split="train").remove_columns(
+        "meta"
+    )
     assert isinstance(dataset, datasets.Dataset)
     print(dataset)
     print(dataset[0]["text"][:100])
@@ -618,7 +640,9 @@ class TransformerTrainer:
         )
         self.step = 0
 
-    def training_step(self, batch: dict[str, Int[Tensor, "batch seq"]]) -> Float[Tensor, ""]:
+    def training_step(
+        self, batch: dict[str, Int[Tensor, "batch seq"]]
+    ) -> Float[Tensor, ""]:
         """
         Calculates the loss on the tokens in the batch, performs a gradient update step, and logs the loss.
 
@@ -652,7 +676,9 @@ class TransformerTrainer:
         for each epoch at `self.args.max_steps_per_epoch` steps.
         """
         wandb.init(
-            project=self.args.wandb_project, name=self.args.wandb_name, config=self.args.__dict__
+            project=self.args.wandb_project,
+            name=self.args.wandb_name,
+            config=self.args.__dict__,
         )
         accuracy = np.nan
 
@@ -769,7 +795,8 @@ class TransformerSampler:
             logits = logits[0, -1]
             # Get next token (as a tensor of size (1, 1) so we can concat it to input_ids)
             next_token = t.tensor(
-                [TransformerSampler.sample_next_token(input_ids, logits, **kwargs)], device=device
+                [TransformerSampler.sample_next_token(input_ids, logits, **kwargs)],
+                device=device,
             )
             # Create new input ids string, with shape (1, old_seq_len + 1)
             input_ids = t.cat([input_ids, next_token], dim=-1)
@@ -811,7 +838,9 @@ class TransformerSampler:
         # list for final beams to return (and early terminations)
         final_logprobs_and_completions = []
         # Keep track of all best beams after each step
-        best_beams = Beams(self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens)
+        best_beams = Beams(
+            self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens
+        )
 
         for n in tqdm(range(max_new_tokens)):
             # Generation step
@@ -821,7 +850,9 @@ class TransformerSampler:
 
             # Filtering step
             best_beams, best_beams_terminated = best_beams.filter(num_beams=num_beams)
-            final_logprobs_and_completions.extend(best_beams_terminated.logprobs_and_completions)
+            final_logprobs_and_completions.extend(
+                best_beams_terminated.logprobs_and_completions
+            )
 
             # Print output
             if verbose:
@@ -832,7 +863,9 @@ class TransformerSampler:
                 return final_logprobs_and_completions[:num_return_sequences]
 
         final_logprobs_and_completions.extend(best_beams.logprobs_and_completions)
-        final_logprobs_and_completions = final_logprobs_and_completions[:num_return_sequences]
+        final_logprobs_and_completions = final_logprobs_and_completions[
+            :num_return_sequences
+        ]
         return final_logprobs_and_completions
 
     @staticmethod
@@ -849,7 +882,9 @@ class TransformerSampler:
         assert temperature >= 0, "Temperature should be non-negative"
         assert 0 <= top_p <= 1.0, "Top-p must be a probability"
         assert 0 <= top_k, "Top-k must be non-negative"
-        assert not (top_p != 0 and top_k != 0), "At most one of top-p and top-k supported"
+        assert not (
+            top_p != 0 and top_k != 0
+        ), "At most one of top-p and top-k supported"
 
         # Set random seeds for reproducibility
         if seed is not None:
@@ -906,7 +941,9 @@ class TransformerSampler:
         """
         Samples from the distribution defined by the logits.
         """
-        sampled_token = t.distributions.categorical.Categorical(logits=logits).sample().item()
+        sampled_token = (
+            t.distributions.categorical.Categorical(logits=logits).sample().item()
+        )
         return int(sampled_token)
 
     @staticmethod
@@ -916,7 +953,9 @@ class TransformerSampler:
         """
         top_k_logits, top_k_token_ids = logits.topk(k)
         # Get sampled token (which is an index corresponding to the list of top-k tokens)
-        sampled_token_idx = t.distributions.categorical.Categorical(logits=top_k_logits).sample()
+        sampled_token_idx = t.distributions.categorical.Categorical(
+            logits=top_k_logits
+        ).sample()
         # Get the actual token id, as an int
         return top_k_token_ids[sampled_token_idx].item()  # type: ignore
 
@@ -952,7 +991,9 @@ if MAIN:
     output = sampler.sample(prompt, max_tokens_generated=8, temperature=0.0)
     print(f"Your model said: {output!r}\n")
 
-    expected = "Jingle bells, jingle bells, jingle all the way up to the top of the mountain."
+    expected = (
+        "Jingle bells, jingle bells, jingle all the way up to the top of the mountain."
+    )
     assert output == expected
 
     print("Tests passed!")
@@ -1016,7 +1057,9 @@ if MAIN:
     input_ids = tokenizer.encode(bieber_prompt, return_tensors="pt")
     assert isinstance(input_ids, Tensor)
     logits = t.ones(tokenizer.vocab_size)  # type: ignore
-    penalized_logits = TransformerSampler.apply_frequency_penalty(input_ids.squeeze(), logits, 2.0)
+    penalized_logits = TransformerSampler.apply_frequency_penalty(
+        input_ids.squeeze(), logits, 2.0
+    )
 
     assert (
         penalized_logits[5156].item() == -11
@@ -1074,7 +1117,9 @@ if MAIN:
 
     N = 10000
     for _ in tqdm(range(N)):
-        token = TransformerSampler.sample_next_token(input_ids.squeeze(), logits, top_k=5)
+        token = TransformerSampler.sample_next_token(
+            input_ids.squeeze(), logits, top_k=5
+        )
         observed_freqs[tokenizer.decode(token)] += 1  # type: ignore
 
     for word in expected_top_5:
@@ -1094,7 +1139,9 @@ if MAIN:
     sampler = TransformerSampler(model, tokenizer)  # type: ignore
 
     your_prompt = "In a shocking finding, scientist discovered a herd of unicorns living in a remote, previously unexplored valley, in the Andes Mountains. Even more surprising to the researchers was the fact that the unicorns spoke perfect English."
-    output = sampler.sample(your_prompt, temperature=0.7, top_k=40, max_tokens_generated=64)
+    output = sampler.sample(
+        your_prompt, temperature=0.7, top_k=40, max_tokens_generated=64
+    )
     rprint(f"Your model said:\n\n[bold dark_orange]{output}")
 
 # %%
@@ -1115,7 +1162,9 @@ if MAIN:
 
     N = 10000
     for _ in tqdm(range(N)):
-        token = TransformerSampler.sample_next_token(input_ids.squeeze(), logits, top_p=0.1)
+        token = TransformerSampler.sample_next_token(
+            input_ids.squeeze(), logits, top_p=0.1
+        )
         observed_freqs[tokenizer.decode(token)] += 1  # type: ignore
 
     for word in expected_top_10pct:
@@ -1135,7 +1184,9 @@ if MAIN:
     sampler = TransformerSampler(model, tokenizer)  # type: ignore
 
     your_prompt = "Eliezer Shlomo Yudkowsky (born September 11, 1979) is an American decision and artificial intelligence (AI) theorist and writer, best known for"
-    output = sampler.sample(your_prompt, temperature=0.7, top_p=0.95, max_tokens_generated=64)
+    output = sampler.sample(
+        your_prompt, temperature=0.7, top_p=0.95, max_tokens_generated=64
+    )
     rprint(f"Your model said:\n\n[bold dark_orange]{output}")
 
 # %%
@@ -1166,7 +1217,9 @@ class Beams:
             for (logprob_sum, tokens) in zip(self.logprob_sums, self.tokens)
         ]
 
-    def generate(self, toks_per_beam: int, no_repeat_ngram_size: int | None = None) -> "Beams":
+    def generate(
+        self, toks_per_beam: int, no_repeat_ngram_size: int | None = None
+    ) -> "Beams":
         """
         Starting from the current set of beams (which has length `num_beams`), returns a new
         set of `num_beams * toks_per_beam`, containing the best `toks_per_beam` continuations for each
@@ -1195,7 +1248,9 @@ class Beams:
         )
         new_tokens = t.concat(
             [
-                einops.repeat(self.tokens, "batch seq -> (batch k) seq", k=toks_per_beam),
+                einops.repeat(
+                    self.tokens, "batch seq -> (batch k) seq", k=toks_per_beam
+                ),
                 einops.rearrange(topk_tokenIDs, "batch k -> (batch k) 1"),
             ],
             dim=-1,
@@ -1273,7 +1328,9 @@ class Beams:
             # Next, find all the tokens we're not allowed to generate (by going iterating through past ngrams and seeing if those ngram prefixes match the last one)
             for i in range(seq_len - (no_repeat_ngram_size - 1)):
                 ngrams = self.tokens[:, i : i + no_repeat_ngram_size]  # (batch, ngram)
-                ngrams_are_repeated = (ngrams[:, :-1] == last_ngram_prefix).all(-1)  # (batch,)
+                ngrams_are_repeated = (ngrams[:, :-1] == last_ngram_prefix).all(
+                    -1
+                )  # (batch,)
                 ngram_end_tokens = ngrams[:, [-1]]  # (batch, 1)
                 # Fill logprobs with neginf wherever the ngrams are repeated
                 logprobs[range(batch), ngram_end_tokens] = t.where(
@@ -1370,7 +1427,9 @@ if MAIN:
     t.testing.assert_close(best_beams.logprob_sums, logprob_sums[[0]])
     t.testing.assert_close(best_beams.tokens, tokens[[0]])
 
-    assert early_terminations.logprobs_and_completions == [(-2.0, "Stop" + tokenizer.eos_token)]
+    assert early_terminations.logprobs_and_completions == [
+        (-2.0, "Stop" + tokenizer.eos_token)
+    ]
 
     print("All tests for `filter` passed!")
 
@@ -1397,7 +1456,11 @@ if MAIN:
         avg_logprob_as_prob = (
             t.tensor(logprob_sum / (len(tokenizer.encode(text)) - orig_len)).exp().item()  # type: ignore
         )
-        print("=" * 25 + f" Avg logprob (as probability) = {avg_logprob_as_prob:.3f} " + "=" * 25)
+        print(
+            "=" * 25
+            + f" Avg logprob (as probability) = {avg_logprob_as_prob:.3f} "
+            + "=" * 25
+        )
         rprint("Best output:\n\n[bold dark_orange]" + text)
 
 # %%

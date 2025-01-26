@@ -12,7 +12,9 @@ def test_causal_mask(apply_causal_mask):
     import solutions as solutions
 
     cfg = solutions.Config()
-    attn_scores = t.randn((1, 1, 5, 5)).to(solutions.device)  # (batch, n_heads, query_pos, key_pos)
+    attn_scores = t.randn((1, 1, 5, 5)).to(
+        solutions.device
+    )  # (batch, n_heads, query_pos, key_pos)
     attn = solutions.Attention(cfg)
 
     sol_apply_causal_mask = attn.apply_causal_mask
