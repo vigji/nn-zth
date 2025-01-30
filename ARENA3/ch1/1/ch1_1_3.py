@@ -57,7 +57,9 @@ print("Norms:")
 print(AB.norm())
 print(AB_factor.norm())
 
-print(f"Right dimension: {AB_factor.rdim}, Left dimension: {AB_factor.ldim}, Hidden dimension: {AB_factor.mdim}")
+print(
+    f"Right dimension: {AB_factor.rdim}, Left dimension: {AB_factor.ldim}, Hidden dimension: {AB_factor.mdim}"
+)
 # %%
 
 print("Eigenvalues:")
@@ -78,9 +80,11 @@ ABC_factor = AB_factor @ C
 
 print(f"Unfactored: shape={ABC.shape}, norm={ABC.norm()}")
 print(f"Factored: shape={ABC_factor.shape}, norm={ABC_factor.norm()}")
-print(f"\nRight dimension: {ABC_factor.rdim}, "
-      f"Left dimension: {ABC_factor.ldim}, "
-      f"Hidden dimension: {ABC_factor.mdim}")
+print(
+    f"\nRight dimension: {ABC_factor.rdim}, "
+    f"Left dimension: {ABC_factor.ldim}, "
+    f"Hidden dimension: {ABC_factor.mdim}"
+)
 
 AB_unfactored = AB_factor.AB
 t.testing.assert_close(AB_unfactored, AB)
