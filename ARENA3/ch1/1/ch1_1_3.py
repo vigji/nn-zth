@@ -49,6 +49,41 @@ from plotly_utils import (
 t.set_grad_enabled(False)
 
 MAIN = __name__ == "__main__"
+
+def run_and_cache_model_repeated_tokens(
+    model: HookedTransformer, seq_len: int, batch_size: int = 1
+) -> tuple[Tensor, Tensor, ActivationCache]:
+    """
+    Generates a sequence of repeated random tokens, and runs the model on it, returning (tokens, logits, cache). This
+    function should use the `generate_repeated_tokens` function above
+
+    Outputs are:
+        rep_tokens: [batch_size, 1+2*seq_len]
+        rep_logits: [batch_size, 1+2*seq_len, d_vocab]
+        rep_cache: The cache of the model run on rep_tokens
+    """
+    tokens_seq = generate_repeated_tokens(model, seq_len, batch_size)
+
+    logits, cache = model.run_with_cache(tokens_seq)
+
+    return tokens_seq, logits, cache
+
+# %%
+def generate_repeated_tokens(
+    model: HookedTransformer, seq_len: int, batch_size: int = 1
+) -> Int[Tensor, "batch_size full_seq_len"]:
+    """
+    Generates a sequence of repeated random tokens
+
+    Outputs are:
+        rep_tokens: [batch_size, 1+2*seq_len]
+    """
+    prefix = (t.ones(batch_size, 1) * model.tokenizer.bos_token_id).long()
+
+    random_seq = t.randint(0, model.cfg.d_vocab, (batch_size, seq_len))
+
+    return t.concat([prefix, random_seq, random_seq], axis=-1)
+
 # %%
 cfg = HookedTransformerConfig(
     d_model=768,
@@ -192,4 +227,160 @@ imshow(
     width=700,
     height=600,
 )
+# %%
+
+
+def decompose_qk_input(cache: ActivationCache) -> Float[Tensor, "n_heads+2 posn d_model"]:
+    """
+    Retrieves all the input tensors to the first attention layer, and concatenates them along the 0th dim.
+
+    The [i, 0, 0]th element is y_i (from notation above). The sum of these tensors along the 0th dim should
+    be the input to the first attention layer.
+    """
+    return t.concat([rep_cache["hook_embed"].unsqueeze(0),
+                    rep_cache["hook_pos_embed"].unsqueeze(0),
+                    einops.rearrange(rep_cache["blocks.0.attn.hook_result"], "posn n_h d -> n_h posn d")])
+
+
+def decompose_q(
+    decomposed_qk_input: Float[Tensor, "n_heads+2 posn d_model"],
+    ind_head_index: int,
+    model: HookedTransformer,
+) -> Float[Tensor, "n_heads+2 posn d_head"]:
+    """
+    Computes the tensor of query vectors for each decomposed QK input.
+
+    The [i, :, :]th element is y_i @ W_Q (so the sum along axis 0 is just the q-values).
+    """
+
+    return einops.einsum(decomposed_qk_input, 
+                         model.get_parameter(f"blocks.1.attn.W_Q")[ind_head_index, :, :],
+                         "n posn d_model, d_model d_head -> n posn d_head")
+
+
+def decompose_k(
+    decomposed_qk_input: Float[Tensor, "n_heads+2 posn d_model"],
+    ind_head_index: int,
+    model: HookedTransformer,
+) -> Float[Tensor, "n_heads+2 posn d_head"]:
+    """
+    Computes the tensor of key vectors for each decomposed QK input.
+
+    The [i, :, :]th element is y_i @ W_K(so the sum along axis 0 is just the k-values)
+    """
+    return einops.einsum(decomposed_qk_input, 
+                         model.get_parameter(f"blocks.1.attn.W_K")[ind_head_index, :, :],
+                         "n posn d_model, d_model d_head -> n posn d_head")
+
+
+# Recompute rep tokens/logits/cache, if we haven't already
+seq_len = 50
+batch_size = 1
+(rep_tokens, rep_logits, rep_cache) = run_and_cache_model_repeated_tokens(model, seq_len, batch_size)
+rep_cache.remove_batch_dim()
+
+ind_head_index = 4
+
+# First we get decomposed q and k input, and check they're what we expect
+decomposed_qk_input = decompose_qk_input(rep_cache)
+decomposed_q = decompose_q(decomposed_qk_input, ind_head_index, model)
+decomposed_k = decompose_k(decomposed_qk_input, ind_head_index, model)
+t.testing.assert_close(
+    decomposed_qk_input.sum(0), rep_cache["resid_pre", 1] + rep_cache["pos_embed"], rtol=0.01, atol=1e-05
+)
+t.testing.assert_close(decomposed_q.sum(0), rep_cache["q", 1][:, ind_head_index], rtol=0.01, atol=0.001)
+t.testing.assert_close(decomposed_k.sum(0), rep_cache["k", 1][:, ind_head_index], rtol=0.01, atol=0.01)
+
+# Second, we plot our results
+component_labels = ["Embed", "PosEmbed"] + [f"0.{h}" for h in range(model.cfg.n_heads)]
+for decomposed_input, name in [(decomposed_q, "query"), (decomposed_k, "key")]:
+    imshow(
+        utils.to_numpy(decomposed_input.pow(2).sum([-1])),
+        labels={"x": "Position", "y": "Component"},
+        title=f"Norms of components of {name}",
+        y=component_labels,
+        width=800,
+        height=400,
+    )
+# %%
+def decompose_attn_scores(
+    decomposed_q: Float[Tensor, "q_comp q_pos d_model"],
+    decomposed_k: Float[Tensor, "k_comp k_pos d_model"],
+) -> Float[Tensor, "q_comp k_comp q_pos k_pos"]:
+    """
+    Output is decomposed_scores with shape [query_component, key_component, query_pos, key_pos]
+
+    The [i, j, 0, 0]th element is y_i @ W_QK @ y_j^T (so the sum along both first axes are the attention scores)
+    """
+    return einops.einsum(decomposed_q, decomposed_k, 
+                        "q_comp q_pos d_model, k_comp k_pos d_model -> q_comp k_comp q_pos k_pos")
+
+
+tests.test_decompose_attn_scores(decompose_attn_scores, decomposed_q, decomposed_k)
+# %%
+# First plot: attention score contribution from (query_component, key_component) = (Embed, L0H7), you can replace this
+# with any other pair and see that the values are generally much smaller, i.e. this pair dominates the attention score
+# calculation
+decomposed_scores = decompose_attn_scores(decomposed_q, decomposed_k)
+
+q_label = "Embed"
+k_label = "0.6"
+decomposed_scores_from_pair = decomposed_scores[component_labels.index(q_label), component_labels.index(k_label)]
+
+imshow(
+    utils.to_numpy(t.tril(decomposed_scores_from_pair)),
+    title=f"Attention score contributions from query = {q_label}, key = {k_label}<br>(by query & key sequence positions)",
+    width=700,
+)
+
+
+# Second plot: std dev over query and key positions, shown by component. This shows us that the other pairs of
+# (query_component, key_component) are much less important, without us having to look at each one individually like we
+# did in the first plot!
+decomposed_stds = einops.reduce(
+    decomposed_scores, "query_decomp key_decomp query_pos key_pos -> query_decomp key_decomp", t.std
+)
+imshow(
+    utils.to_numpy(decomposed_stds),
+    labels={"x": "Key Component", "y": "Query Component"},
+    title="Std dev of attn score contributions across sequence positions<br>(by query & key component)",
+    x=component_labels,
+    y=component_labels,
+    width=700,
+)
+# %%
+def find_K_comp_full_circuit(
+    model: HookedTransformer, prev_token_head_index: int, ind_head_index: int
+) -> FactoredMatrix:
+    """
+    Returns a (vocab, vocab)-size FactoredMatrix, with the first dimension being the query side (direct from token
+    embeddings) and the second dimension being the key side (going via the previous token head).
+    """
+    # W_OV = model.get_parameter(f"blocks.0.attn.W_K")[prev_token_head_index, :, :]
+    # W_QK = model.get_parameter(f"blocks.1.attn.W_K")[ind_head_index, :, :]
+
+    W_E = model.get_parameter("W_E")
+    W_O = model.get_parameter("blocks.0.attn.W_O")[prev_token_head_index, :, :]
+    W_V = model.get_parameter("blocks.0.attn.W_V")[prev_token_head_index, :, :]
+    W_K = model.get_parameter("blocks.1.attn.W_K")[ind_head_index, :, :]
+    W_Q = model.get_parameter("blocks.1.attn.W_Q")[ind_head_index, : ,:]
+
+    Q = W_E @ W_Q
+    K = W_E @ W_V @ W_O @ W_K
+
+    return FactoredMatrix(Q, K.T)
+
+
+
+
+
+prev_token_head_index = 7
+ind_head_index = 10
+K_comp_circuit = find_K_comp_full_circuit(model, prev_token_head_index, ind_head_index)
+
+tests.test_find_K_comp_full_circuit(find_K_comp_full_circuit, model)
+
+print(f"Fraction of tokens where the highest activating key is the same token: {top_1_acc(K_comp_circuit.T):.4f}")
+g# %%
+model.get_parameter("blocks.0.attn.W_O").shape
 # %%
