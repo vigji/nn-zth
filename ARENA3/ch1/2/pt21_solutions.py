@@ -25,8 +25,8 @@ device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.i
 chapter = "chapter1_transformer_interp"
 section = "part31_superposition_and_saes"
 
-import pt31_tests as tests
-import pt31_utils as utils
+import pt21_tests as tests
+import pt21_utils as utils
 from plotly_utils import imshow, line
 
 MAIN = __name__ == "__main__"

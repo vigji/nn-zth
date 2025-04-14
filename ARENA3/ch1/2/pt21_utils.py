@@ -21,9 +21,6 @@ from tqdm import tqdm
 
 Arr = np.ndarray
 
-if TYPE_CHECKING:
-    from part31_superposition_and_saes.solutions import Model
-
 red = plt.get_cmap("coolwarm")(0.0)
 blue = plt.get_cmap("coolwarm")(1.0)
 light_grey = np.array([15 / 16, 15 / 16, 15 / 16, 1.0])
