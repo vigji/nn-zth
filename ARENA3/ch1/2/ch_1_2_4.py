@@ -92,7 +92,6 @@ class ToySAE(nn.Module):
         W_enc = t.zeros((cfg.n_inst, cfg.d_in, cfg.d_sae))
         self.W_enc = nn.Parameter(t.nn.init.kaiming_uniform_(W_enc))
 
-
         self.to(device)
 
     @property
@@ -105,14 +104,19 @@ class ToySAE(nn.Module):
         Returns decoder weights, normalized over the autoencoder input dimension.
         """
         # You'll fill this in later
-        raise NotImplementedError()
+        norm = t.norm(self.W_dec, dim=-1)
+
+        return (self.W_dec) / (norm[..., t.newaxis] + self.cfg.weight_normalize_eps)
 
     def generate_batch(self, batch_size: int) -> Float[Tensor, "batch inst d_in"]:
         """
         Generates a batch of hidden activations from our model.
         """
         # You'll fill this in later
-        raise NotImplementedError()
+        x = self.model.generate_batch(batch_size=batch_size)
+
+        return einops.einsum(x, self.model.W, "batch inst feat, inst hid feat -> batch inst hid")
+        
 
     def forward(
         self, h: Float[Tensor, "batch inst d_in"]
@@ -135,7 +139,22 @@ class ToySAE(nn.Module):
             h_reconstructed: reconstructed autoencoder input
         """
         # You'll fill this in later
-        raise NotImplementedError()
+        h_centered = h - self.b_dec
+        z_act = einops.einsum(self.W_enc, h_centered, "n_inst d_in d_sae,  batch n_inst d_in->batch n_inst d_sae")
+        z = t.relu(z_act + self.b_enc)
+
+        h_rec = einops.einsum(self.W_dec_normalized, z, "n_inst d_sae d_in,  batch n_inst d_sae->batch n_inst d_in") + self.b_dec
+
+        loss_rec = t.mean((h - h_rec)**2, dim=-1)
+        loss_sparse = t.sum(t.abs(z), dim=-1)
+
+        loss_dict = {"L_reconstruction": loss_rec, 
+                     "L_sparsity": loss_sparse}
+        
+        loss = loss_rec + loss_sparse * self.cfg.sparsity_coeff
+
+        return loss_dict, loss, z, h_rec
+        
 
     def optimize(
         self,
@@ -271,4 +290,28 @@ class ToySAE(nn.Module):
 # Go back up and edit your `ToySAE.__init__` method, then run the test below
 
 tests.test_sae_init(ToySAE)
+tests.test_sae_W_dec_normalized(ToySAE)
+tests.test_sae_generate_batch(ToySAE)
+tests.test_sae_forward(ToySAE)
+
+
+# %%
+d_hidden = d_in = 2
+n_features = d_sae = 5
+n_inst = 16
+
+# Create a toy model, and train it to convergence
+cfg = ToyModelConfig(n_inst=n_inst, n_features=n_features, d_hidden=d_hidden)
+model = ToyModel(cfg=cfg, device=device, feature_probability=0.025)
+model.optimize()
+
+sae = ToySAE(cfg=ToySAEConfig(n_inst=n_inst, d_in=d_in, d_sae=d_sae), model=model)
+
+h = sae.generate_batch(512)
+
+utils.plot_features_in_2d(model.W[:8], title="Base model")
+utils.plot_features_in_2d(
+    einops.rearrange(h[:, :8], "batch inst d_in -> inst d_in batch"),
+    title="Hidden state representation of a random batch of data",
+)
 # %%
