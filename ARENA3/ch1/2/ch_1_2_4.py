@@ -1,13 +1,20 @@
 # %%
+from contourpy import dechunk_filled
 import torch as t
 from jaxtyping import Float
 from torch import Tensor, nn
+import einops
+from tqdm import tqdm
+from IPython.display import HTML, display
 
 device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
 
 import pt21_tests as tests
 import pt21_utils as utils
 from plotly_utils import imshow, line
+from dataclasses import dataclass
+
+from typing import Callable, Literal, Any
 
 MAIN = __name__ == "__main__"
 # %%
@@ -267,7 +274,21 @@ class ToySAE(nn.Module):
             - Set new values of W_dec and W_enc to be these normalized vectors, at each dead neuron
             - Set b_enc to be zero, at each dead neuron
         """
-        raise NotImplementedError()
+
+        dead_lats_inst_idx, dead_lats_d_idx = t.where(t.sum(frac_active_in_window, dim=0) == 0)
+
+        random_v = t.rand(dead_lats_inst_idx.shape[0], self.cfg.d_in, device=self._W_dec.device)
+        random_v = random_v / t.norm(random_v, dim=-1)[:, t.newaxis]
+
+        self._W_dec[dead_lats_inst_idx, dead_lats_d_idx, :] = random_v
+        self.W_enc[dead_lats_inst_idx, :, dead_lats_d_idx] = random_v * resample_scale
+
+        self.b_enc[dead_lats_inst_idx, dead_lats_d_idx] = 0
+
+
+
+
+        
 
     @t.no_grad()
     def resample_advanced(
@@ -293,7 +314,10 @@ tests.test_sae_init(ToySAE)
 tests.test_sae_W_dec_normalized(ToySAE)
 tests.test_sae_generate_batch(ToySAE)
 tests.test_sae_forward(ToySAE)
+tests.test_resample_simple(ToySAE)
 
+
+# %%
 
 # %%
 d_hidden = d_in = 2
@@ -313,5 +337,46 @@ utils.plot_features_in_2d(model.W[:8], title="Base model")
 utils.plot_features_in_2d(
     einops.rearrange(h[:, :8], "batch inst d_in -> inst d_in batch"),
     title="Hidden state representation of a random batch of data",
+)
+# %%
+data_log = sae.optimize(steps=20_000)
+
+# %%
+
+utils.animate_features_in_2d(
+    data_log,
+    instances=list(range(8)),  # only plot the first 8 instances
+    rows=["W_enc", "_W_dec"],
+    filename=str("animation-training.html"),
+    title="SAE on toy model",
+)
+
+# If this display code doesn't work, try opening the animation in your browser from where it gets saved
+with open("animation-training.html") as f:
+    display(HTML(f.read()))
+# %%
+utils.frac_active_line_plot(
+    frac_active=t.stack([data["frac_active"] for data in data_log]),
+    title="Probability of sae features being active during training",
+    avg_window=20,
+)
+# %%
+resampling_sae = ToySAE(cfg=ToySAEConfig(n_inst=n_inst, d_in=d_in, d_sae=d_sae), model=model)
+
+resampling_data_log = resampling_sae.optimize(steps=20_000, resample_method="simple")
+
+utils.animate_features_in_2d(
+    resampling_data_log,
+    rows=["W_enc", "_W_dec"],
+    instances=list(range(8)),  # only plot the first 8 instances
+    filename=str(section_dir / "animation-training-resampling.html"),
+    color_resampled_latents=True,
+    title="SAE on toy model (with resampling)",
+)
+
+utils.frac_active_line_plot(
+    frac_active=t.stack([data["frac_active"] for data in resampling_data_log]),
+    title="Probability of sae features being active during training",
+    avg_window=20,
 )
 # %%
