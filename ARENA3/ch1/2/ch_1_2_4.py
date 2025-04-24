@@ -145,7 +145,6 @@ class ToySAE(nn.Module):
             acts_post:       autoencoder latent activations, after applying ReLU
             h_reconstructed: reconstructed autoencoder input
         """
-        # You'll fill this in later
         h_centered = h - self.b_dec
         z_act = einops.einsum(self.W_enc, h_centered, "n_inst d_in d_sae,  batch n_inst d_in->batch n_inst d_sae")
         z = t.relu(z_act + self.b_enc)
@@ -378,5 +377,460 @@ utils.frac_active_line_plot(
     frac_active=t.stack([data["frac_active"] for data in resampling_data_log]),
     title="Probability of sae features being active during training",
     avg_window=20,
+)
+# %%
+#################
+# Gated units
+
+class GatedToySAE(ToySAE):
+    W_gate: Float[Tensor, "inst d_in d_sae"]
+    b_gate: Float[Tensor, "inst d_sae"]
+    r_mag: Float[Tensor, "inst d_sae"]
+    b_mag: Float[Tensor, "inst d_sae"]
+    _W_dec: Float[Tensor, "inst d_sae d_in"] | None
+    b_dec: Float[Tensor, "inst d_in"]
+
+    def __init__(self, cfg: ToySAEConfig, model: ToyModel):
+        super(ToySAE, self).__init__()
+
+        assert cfg.d_in == model.cfg.d_hidden, "ToyModel's hidden dim doesn't match SAE input dim"
+        self.cfg = cfg
+        self.model = model.requires_grad_(False)
+        self.model.W.data[1:] = self.model.W.data[0]
+        self.model.b_final.data[1:] = self.model.b_final.data[0]
+
+        self._W_dec = (
+            None
+            if self.cfg.tied_weights
+            else nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_sae, cfg.d_in))))
+        )
+        self.b_dec = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_in))
+
+        self.W_gate = nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_in, cfg.d_sae))))
+        self.b_gate = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
+        self.r_mag = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
+        self.b_mag = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
+
+        self.to(device)
+
+    @property
+    def W_dec(self) -> Float[Tensor, "inst d_sae d_in"]:
+        return self._W_dec if self._W_dec is not None else self.W_gate.transpose(-1, -2)
+
+    @property
+    def W_mag(self) -> Float[Tensor, "inst d_in d_sae"]:
+        return self.r_mag.exp().unsqueeze(1) * self.W_gate
+
+    def forward(
+        self, h: Float[Tensor, "batch inst d_in"]
+    ) -> tuple[
+        dict[str, Float[Tensor, "batch inst"]],
+        Float[Tensor, ""],
+        Float[Tensor, "batch inst d_sae"],
+        Float[Tensor, "batch inst d_in"],
+    ]:
+        """
+        Same as previous forward function, but allows for gated case as well (in which case we have different
+        functional form, as well as a new term "L_aux" in the loss dict).
+        """
+        h_cent = h - self.b_dec
+
+        # Compute the gating terms (pi_gate(x) and f_gate(x) in the paper)
+        gating_pre_activation = (
+            einops.einsum(h_cent, self.W_gate, "batch inst d_in, inst d_in d_sae -> batch inst d_sae") + self.b_gate
+        )
+        active_features = (gating_pre_activation > 0).float()
+
+        # Compute the magnitude term (f_mag(x) in the paper)
+        magnitude_pre_activation = (
+            einops.einsum(h_cent, self.W_mag, "batch inst d_in, inst d_in d_sae -> batch inst d_sae") + self.b_mag
+        )
+        feature_magnitudes = t.relu(magnitude_pre_activation)
+
+        # Compute the hidden activations (f˜(x) in the paper)
+        acts_post = active_features * feature_magnitudes
+
+        # Compute reconstructed input
+        h_reconstructed = (
+            einops.einsum(acts_post, self.W_dec, "batch inst d_sae, inst d_sae d_in -> batch inst d_in") + self.b_dec
+        )
+
+        # Compute loss terms
+        gating_post_activation = t.relu(gating_pre_activation)
+        via_gate_reconstruction = (
+            einops.einsum(
+                gating_post_activation, self.W_dec.detach(), "batch inst d_sae, inst d_sae d_in -> batch inst d_in"
+            )
+            + self.b_dec.detach()
+        )
+        loss_dict = {
+            "L_reconstruction": (h_reconstructed - h).pow(2).mean(-1),
+            "L_sparsity": gating_post_activation.sum(-1),
+            "L_aux": (via_gate_reconstruction - h).pow(2).sum(-1),
+        }
+
+        loss = loss_dict["L_reconstruction"] + self.cfg.sparsity_coeff * loss_dict["L_sparsity"] + loss_dict["L_aux"]
+
+        assert sorted(loss_dict.keys()) == ["L_aux", "L_reconstruction", "L_sparsity"]
+        return loss_dict, loss, acts_post, h_reconstructed
+
+    @t.no_grad()
+    def resample_simple(self, frac_active_in_window: Float[Tensor, "window inst d_sae"], resample_scale: float) -> None:
+        dead_latents_mask = (frac_active_in_window < 1e-8).all(dim=0)  # [instances d_sae]
+        n_dead = int(dead_latents_mask.int().sum().item())
+
+        replacement_values = t.randn((n_dead, self.cfg.d_in), device=self.W_gate.device)
+        replacement_values_normed = replacement_values / (
+            replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+        )
+
+        # New names for weights & biases to resample
+        self.W_gate.data.transpose(-1, -2)[dead_latents_mask] = resample_scale * replacement_values_normed
+        self.W_dec.data[dead_latents_mask] = replacement_values_normed
+        self.b_mag.data[dead_latents_mask] = 0.0
+        self.b_gate.data[dead_latents_mask] = 0.0
+        self.r_mag.data[dead_latents_mask] = 0.0
+
+    @t.no_grad()
+    def resample_advanced(
+        self, frac_active_in_window: Float[Tensor, "window inst d_sae"], resample_scale: float, batch_size: int
+    ) -> None:
+        h = self.generate_batch(batch_size)
+        l2_loss = self.forward(h)[0]["L_reconstruction"]
+
+        for instance in range(self.cfg.n_inst):
+            is_dead = (frac_active_in_window[:, instance] < 1e-8).all(dim=0)
+            dead_latents = t.nonzero(is_dead).squeeze(-1)
+            n_dead = dead_latents.numel()
+            if n_dead == 0:
+                continue
+
+            l2_loss_instance = l2_loss[:, instance]  # [batch_size]
+            if l2_loss_instance.max() < 1e-6:
+                continue
+
+            distn = t.distributions.Categorical(probs=l2_loss_instance.pow(2) / l2_loss_instance.pow(2).sum())
+            replacement_indices = distn.sample((n_dead,))  # type: ignore
+
+            replacement_values = (h - self.b_dec)[replacement_indices, instance]  # [n_dead d_in]
+            replacement_values_normalized = replacement_values / (
+                replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+            )
+
+            W_gate_norm_alive_mean = (
+                self.W_gate[instance, :, ~is_dead].norm(dim=0).mean().item() if (~is_dead).any() else 1.0
+            )
+
+            # New names for weights & biases to resample
+            self.W_dec.data[instance, dead_latents, :] = replacement_values_normalized
+            self.W_gate.data[instance, :, dead_latents] = (
+                replacement_values_normalized.T * W_gate_norm_alive_mean * resample_scale
+            )
+            self.b_mag.data[instance, dead_latents] = 0.0
+            self.b_gate.data[instance, dead_latents] = 0.0
+            self.r_mag.data[instance, dead_latents] = 0.0
+# %%
+gated_sae = GatedToySAE(
+    cfg=ToySAEConfig(
+        n_inst=n_inst,
+        d_in=d_in,
+        d_sae=d_sae,
+        sparsity_coeff=1.0,
+    ),
+    model=model,
+)
+gated_data_log = gated_sae.optimize(steps=20_000, resample_method="advanced")
+
+# Animate the best instances, ranked according to average loss near the end of training
+n_inst_to_plot = 4
+n_batches_for_eval = 10
+avg_loss = t.concat([d["loss"] for d in gated_data_log[-n_batches_for_eval:]]).mean(0)
+best_instances = avg_loss.topk(n_inst_to_plot, largest=False).indices.tolist()
+
+utils.animate_features_in_2d(
+    gated_data_log,
+    rows=["W_gate", "_W_dec", "h", "h_r"],
+    instances=best_instances,
+    filename=str("animation-training-gated.html"),
+    color_resampled_latents=True,
+    title="SAE on toy model",
+)
+# %%%
+class CustomFunction(t.autograd.Function):
+    @staticmethod
+    def forward(ctx: Any, input: t.Tensor, n: int) -> t.Tensor:
+        # Save any necessary information for backward pass
+        ctx.save_for_backward(input)
+        ctx.n = n  # Save n as it will be needed in the backward pass
+        # Compute the output
+        return input**n
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: t.Tensor) -> tuple[t.Tensor, None]:
+        # Retrieve saved tensors and n
+        (input,) = ctx.saved_tensors
+        n = ctx.n
+        # Return gradient for input and None for n (as it's not a Tensor)
+        return n * (input ** (n - 1)) * grad_output, None
+
+
+# Test our function, and its gradient
+input = t.tensor(3.0, requires_grad=True)
+output = CustomFunction.apply(input, 2)
+output.backward()
+
+t.testing.assert_close(output, t.tensor(9.0))
+t.testing.assert_close(input.grad, t.tensor(6.0))
+# %%
+def rectangle(x: Tensor, width: float = 1.0) -> Tensor:
+    """
+    Returns the rectangle function value, i.e. K(x) = 1[|x| < width/2], as a float.
+    """
+    return (x.abs() < width / 2).float()
+
+
+class Heaviside(t.autograd.Function):
+    """
+    Implementation of the Heaviside step function, using straight through estimators for the derivative.
+
+        forward:
+            H(z,θ,ε) = 1[z > θ]
+
+        backward:
+            dH/dz := None
+            dH/dθ := -1/ε * K(z/ε)
+
+            where K is the rectangle kernel function with width 1, centered at 0: K(u) = 1[|u| < 1/2]
+    """
+
+    @staticmethod
+    def forward(ctx: Any, z: t.Tensor, theta: t.Tensor, eps: float) -> t.Tensor:
+        ctx.save_for_backward(z, theta)
+        ctx.eps = eps
+
+        return (z - theta > 0).to(dtype=z.dtype)
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: t.Tensor) -> tuple[t.Tensor, t.Tensor, None]:
+        z, theta = ctx.saved_tensors
+        return t.zeros(z.shape, device=z.device), - (1 / ctx.eps) * rectangle((z - theta) / ctx.eps) * grad_output, None
+
+
+# Test our Heaviside function, and its pseudo-gradient
+z = t.tensor([[1.0, 1.4, 1.6, 2.0]], requires_grad=True)
+theta = t.tensor([1.5, 1.5, 1.5, 1.5], requires_grad=True)
+eps = 0.5
+output = Heaviside.apply(z, theta, eps)
+output.backward(t.ones_like(output))  # equiv to backprop on each of the 5 elements of z independently
+
+# Test values
+t.testing.assert_close(output, t.tensor([[0.0, 0.0, 1.0, 1.0]]))  # expect H(θ,z,ε) = 1[z > θ]
+t.testing.assert_close(theta.grad, t.tensor([0.0, -2.0, -2.0, 0.0]))  # expect dH/dθ = -1/ε * K((z-θ)/ε)
+t.testing.assert_close(z.grad, t.tensor([[0.0, 0.0, 0.0, 0.0]]))  # expect dH/dz = zero
+# assert z.grad is None  # expect dH/dz = None
+
+# Test handling of batch dimension
+theta.grad = None
+output_stacked = Heaviside.apply(t.concat([z, z]), theta, eps)
+output_stacked.backward(t.ones_like(output_stacked))
+t.testing.assert_close(theta.grad, 2 * t.tensor([0.0, -2.0, -2.0, 0.0]))
+
+print("All tests for `Heaviside` passed!")
+# %%
+
+class JumpReLU(t.autograd.Function):
+    """
+    Implementation of the JumpReLU function, using straight through estimators for the derivative.
+
+        forward:
+            J(z,θ,ε) = z * 1[z > θ]
+
+        backward:
+            dJ/dθ := -θ/ε * K((z - θ)/ε)
+            dJ/dz := 1[z > θ]
+
+            where K is the rectangle kernel function with width 1, centered at 0: K(u) = 1[|u| < 1/2]
+    """
+
+    @staticmethod
+    def forward(ctx: Any, z: t.Tensor, theta: t.Tensor, eps: float) -> t.Tensor:
+        ctx.save_for_backward(z, theta)
+        ctx.eps = eps
+
+        return z * Heaviside.apply(z, theta, eps)
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: t.Tensor) -> tuple[t.Tensor, t.Tensor, None]:
+        z, theta = ctx.saved_tensors
+        dz = Heaviside.apply(z, theta, ctx.eps) * grad_output
+        dtheta = - (theta / ctx.eps) * rectangle((z - theta) / ctx.eps) * grad_output
+        return dz, dtheta, None
+
+
+
+# Test our JumpReLU function, and its pseudo-gradient
+z = t.tensor([[1.0, 1.4, 1.6, 2.0]], requires_grad=True)
+theta = t.tensor([1.5, 1.5, 1.5, 1.5], requires_grad=True)
+eps = 0.5
+output = JumpReLU.apply(z, theta, eps)
+
+output.backward(t.ones_like(output))  # equiv to backprop on each of the 5 elements of z independently
+
+# Test values
+t.testing.assert_close(output, t.tensor([[0.0, 0.0, 1.6, 2.0]]))  # expect J(θ,z,ε) = z * 1[z > θ]
+t.testing.assert_close(theta.grad, t.tensor([0.0, -3.0, -3.0, 0.0]))  # expect dJ/dθ = -θ/ε * K((z-θ)/ε)
+t.testing.assert_close(z.grad, t.tensor([[0.0, 0.0, 1.0, 1.0]]))  # expect dJ/dz = 1[z > θ]
+
+print("All tests for `JumpReLU` passed!")
+
+# %%
+
+THETA_INIT = 0.1
+
+
+class JumpReLUToySAE(ToySAE):
+    W_enc: Float[Tensor, "inst d_in d_sae"]
+    _W_dec: Float[Tensor, "inst d_sae d_in"] | None
+    b_enc: Float[Tensor, "inst d_sae"]
+    b_dec: Float[Tensor, "inst d_in"]
+    log_theta: Float[Tensor, "inst d_sae"]
+    def __init__(self, cfg: ToySAEConfig, model: ToyModel):
+        super(ToySAE, self).__init__()
+
+        assert cfg.d_in == model.cfg.d_hidden, "ToyModel's hidden dim doesn't match SAE input dim"
+        self.cfg = cfg
+        self.model = model.requires_grad_(False)
+        self.model.W.data[1:] = self.model.W.data[0]
+        self.model.b_final.data[1:] = self.model.b_final.data[0]
+
+        self._W_dec = (
+            None
+            if self.cfg.tied_weights
+            else nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_sae, cfg.d_in))))
+        )
+        self.b_dec = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_in))
+
+        self.W_enc = nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_in, cfg.d_sae))))
+        self.b_enc = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
+        self.log_theta = nn.Parameter(t.full((cfg.n_inst, cfg.d_sae), t.log(t.tensor(THETA_INIT))))
+
+        self.to(device)
+
+    @property
+    def theta(self) -> Float[Tensor, "inst d_sae"]:
+        return self.log_theta.exp()
+
+    def forward(
+        self, h: Float[Tensor, "batch inst d_in"]
+    ) -> tuple[
+        dict[str, Float[Tensor, "batch inst"]],
+        Float[Tensor, ""],
+        Float[Tensor, "batch inst d_sae"],
+        Float[Tensor, "batch inst d_in"],
+    ]:
+        """
+        Same as previous forward function, but allows for gated case as well (in which case we have different
+        functional form, as well as a new term "L_aux" in the loss dict).
+        """
+        h_cent = h - self.b_dec
+
+        acts_pre = (
+            einops.einsum(h_cent, self.W_enc, "batch inst d_in, inst d_in d_sae -> batch inst d_sae") + self.b_enc
+        )
+        # print(self.theta.mean(), self.theta.std(), self.theta.min(), self.theta.max())
+        acts_relu = t.relu(acts_pre)
+        acts_post = JumpReLU.apply(acts_relu, self.theta, self.cfg.ste_epsilon)
+
+        h_reconstructed = (
+            einops.einsum(acts_post, self.W_dec, "batch inst d_sae, inst d_sae d_in -> batch inst d_in") + self.b_dec
+        )
+
+        loss_dict = {
+            "L_reconstruction": (h_reconstructed - h).pow(2).mean(-1),
+            "L_sparsity": Heaviside.apply(acts_relu, self.theta, self.cfg.ste_epsilon).sum(-1),
+        }
+
+        loss = loss_dict["L_reconstruction"] + self.cfg.sparsity_coeff * loss_dict["L_sparsity"]
+
+        return loss_dict, loss, acts_post, h_reconstructed
+
+    @t.no_grad()
+    def resample_simple(
+        self,
+        frac_active_in_window: Float[Tensor, "window inst d_sae"],
+        resample_scale: float,
+    ) -> None:
+        dead_latents_mask = (frac_active_in_window < 1e-8).all(dim=0)  # [instances d_sae]
+        n_dead = int(dead_latents_mask.int().sum().item())
+
+        replacement_values = t.randn((n_dead, self.cfg.d_in), device=self.W_enc.device)
+        replacement_values_normed = replacement_values / (
+            replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+        )
+
+        # New names for weights & biases to resample
+        self.W_enc.data.transpose(-1, -2)[dead_latents_mask] = resample_scale * replacement_values_normed
+        self.W_dec.data[dead_latents_mask] = replacement_values_normed
+        self.b_enc.data[dead_latents_mask] = 0.0
+        self.log_theta.data[dead_latents_mask] = t.log(t.tensor(THETA_INIT))
+
+    @t.no_grad()
+    def resample_advanced(
+        self, frac_active_in_window: Float[Tensor, "window inst d_sae"], resample_scale: float, batch_size: int
+    ) -> None:
+        h = self.generate_batch(batch_size)
+        l2_loss = self.forward(h)[0]["L_reconstruction"]
+
+        for instance in range(self.cfg.n_inst):
+            is_dead = (frac_active_in_window[:, instance] < 1e-8).all(dim=0)
+            dead_latents = t.nonzero(is_dead).squeeze(-1)
+            n_dead = dead_latents.numel()
+            if n_dead == 0:
+                continue
+
+            l2_loss_instance = l2_loss[:, instance]  # [batch_size]
+            if l2_loss_instance.max() < 1e-6:
+                continue
+
+            distn = t.distributions.Categorical(probs=l2_loss_instance.pow(2) / l2_loss_instance.pow(2).sum())
+            replacement_indices = distn.sample((n_dead,))  # type: ignore
+
+            replacement_values = (h - self.b_dec)[replacement_indices, instance]  # [n_dead d_in]
+            replacement_values_normalized = replacement_values / (
+                replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+            )
+
+            W_enc_norm_alive_mean = (
+                self.W_enc[instance, :, ~is_dead].norm(dim=0).mean().item() if (~is_dead).any() else 1.0
+            )
+
+            # New names for weights & biases to resample
+            self.b_enc.data[instance, dead_latents] = 0.0
+            self.log_theta.data[instance, dead_latents] = t.log(t.tensor(THETA_INIT))
+            self.W_dec.data[instance, dead_latents, :] = replacement_values_normalized
+            self.W_enc.data[instance, :, dead_latents] = (
+                replacement_values_normalized.T * W_enc_norm_alive_mean * resample_scale
+            )
+
+
+jumprelu_sae = JumpReLUToySAE(
+    cfg=ToySAEConfig(n_inst=n_inst, d_in=d_in, d_sae=d_sae, tied_weights=True, sparsity_coeff=0.1),
+    model=model,
+)
+jumprelu_data_log = jumprelu_sae.optimize(steps=20_000, resample_method="advanced")  # batch_size=4096?
+
+# Animate the best instances, ranked according to average loss near the end of training
+n_inst_to_plot = 4
+n_batches_for_eval = 10
+avg_loss = t.concat([d["loss"] for d in jumprelu_data_log[-n_batches_for_eval:]]).mean(0)
+best_instances = avg_loss.topk(n_inst_to_plot, largest=False).indices.tolist()
+# %%
+utils.animate_features_in_2d(
+    jumprelu_data_log,
+    rows=["W_enc", "h", "h_r"],
+    instances=best_instances,
+    filename=str("animation-training-jumprelu.html"),
+    color_resampled_latents=True,
+    title="JumpReLU SAE on toy model",
 )
 # %%
