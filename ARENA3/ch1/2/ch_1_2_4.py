@@ -7,7 +7,13 @@ import einops
 from tqdm import tqdm
 from IPython.display import HTML, display
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 import pt21_tests as tests
 import pt21_utils as utils
@@ -35,16 +41,21 @@ SPARSITY = 0.99
 FEATURE_PROBABILITY = 1 - SPARSITY
 
 features_list = [t.randn(size=(2, 100)) for _ in BATCH_SIZES]
-hidden_representations_list = [t.randn(size=(2, batch_size)) for batch_size in BATCH_SIZES]
+hidden_representations_list = [
+    t.randn(size=(2, batch_size)) for batch_size in BATCH_SIZES
+]
 
 utils.plot_features_in_2d(
     features_list + hidden_representations_list,
-    colors=[["blue"] for _ in range(len(BATCH_SIZES))] + [["red"] for _ in range(len(BATCH_SIZES))],
+    colors=[["blue"] for _ in range(len(BATCH_SIZES))]
+    + [["red"] for _ in range(len(BATCH_SIZES))],
     title="Double Descent & Superposition (num features = 100)",
-    subplot_titles=[f"Features (batch={bs})" for bs in BATCH_SIZES] + [f"Data (batch={bs})" for bs in BATCH_SIZES],
+    subplot_titles=[f"Features (batch={bs})" for bs in BATCH_SIZES]
+    + [f"Data (batch={bs})" for bs in BATCH_SIZES],
     allow_different_limits_across_subplots=True,
     n_rows=2,
 )
+
 
 # %%
 @dataclass
@@ -67,21 +78,23 @@ class ToySAE(nn.Module):
     def __init__(self, cfg: ToySAEConfig, model: ToyModel) -> None:
         """
 
-         - d_sae, which is the number of activations in the SAE's hidden layer (i.e. the latent dimension). 
-           Note that we want the SAE latents to correspond to the original data features, which is why we'll need d_sae >= n_features (usually we'll have equality in this section).
-         - d_in, which is the SAE input dimension. This is the same as d_hidden from the previous sections because the SAE is reconstructing the model's hidden activations, however calling it d_hidden in the context of an SAE would be confusing. Usually in this section, we'll have d_in = d_hidden = 2, so we can visualize the results.
-        
-         - n_inst, which means the same as it does in your ToyModel class
-         - d_in, the input size to your SAE (equal to d_hidden of your ToyModel class)
-         - d_sae, the SAE's latent dimension size
-         - sparsity_coeff, which is used in your loss function
-         - weight_normalize_eps, which is added to the denominator whenever you normalize weights
-         - tied_weights, which is a boolean determining whether your encoder and decoder weights are tied
-         - ste_epsilon, which is only relevant for JumpReLU SAEs later on
+        - d_sae, which is the number of activations in the SAE's hidden layer (i.e. the latent dimension).
+          Note that we want the SAE latents to correspond to the original data features, which is why we'll need d_sae >= n_features (usually we'll have equality in this section).
+        - d_in, which is the SAE input dimension. This is the same as d_hidden from the previous sections because the SAE is reconstructing the model's hidden activations, however calling it d_hidden in the context of an SAE would be confusing. Usually in this section, we'll have d_in = d_hidden = 2, so we can visualize the results.
+
+        - n_inst, which means the same as it does in your ToyModel class
+        - d_in, the input size to your SAE (equal to d_hidden of your ToyModel class)
+        - d_sae, the SAE's latent dimension size
+        - sparsity_coeff, which is used in your loss function
+        - weight_normalize_eps, which is added to the denominator whenever you normalize weights
+        - tied_weights, which is a boolean determining whether your encoder and decoder weights are tied
+        - ste_epsilon, which is only relevant for JumpReLU SAEs later on
         """
         super(ToySAE, self).__init__()
 
-        assert cfg.d_in == model.cfg.d_hidden, "Model's hidden dim doesn't match SAE input dim"
+        assert (
+            cfg.d_in == model.cfg.d_hidden
+        ), "Model's hidden dim doesn't match SAE input dim"
         self.cfg = cfg
         self.model = model.requires_grad_(False)
         self.model.W.data[1:] = self.model.W.data[0]
@@ -93,7 +106,7 @@ class ToySAE(nn.Module):
         else:
             _W_dec = t.zeros((cfg.n_inst, cfg.d_sae, cfg.d_in))
             self._W_dec = nn.Parameter(t.nn.init.kaiming_uniform_(_W_dec))
-        
+
         self.b_enc = nn.Parameter(t.zeros((cfg.n_inst, cfg.d_sae)))
         self.b_dec = nn.Parameter(t.zeros((cfg.n_inst, cfg.d_in)))
         W_enc = t.zeros((cfg.n_inst, cfg.d_in, cfg.d_sae))
@@ -122,8 +135,9 @@ class ToySAE(nn.Module):
         # You'll fill this in later
         x = self.model.generate_batch(batch_size=batch_size)
 
-        return einops.einsum(x, self.model.W, "batch inst feat, inst hid feat -> batch inst hid")
-        
+        return einops.einsum(
+            x, self.model.W, "batch inst feat, inst hid feat -> batch inst hid"
+        )
 
     def forward(
         self, h: Float[Tensor, "batch inst d_in"]
@@ -146,21 +160,30 @@ class ToySAE(nn.Module):
             h_reconstructed: reconstructed autoencoder input
         """
         h_centered = h - self.b_dec
-        z_act = einops.einsum(self.W_enc, h_centered, "n_inst d_in d_sae,  batch n_inst d_in->batch n_inst d_sae")
+        z_act = einops.einsum(
+            self.W_enc,
+            h_centered,
+            "n_inst d_in d_sae,  batch n_inst d_in->batch n_inst d_sae",
+        )
         z = t.relu(z_act + self.b_enc)
 
-        h_rec = einops.einsum(self.W_dec_normalized, z, "n_inst d_sae d_in,  batch n_inst d_sae->batch n_inst d_in") + self.b_dec
+        h_rec = (
+            einops.einsum(
+                self.W_dec_normalized,
+                z,
+                "n_inst d_sae d_in,  batch n_inst d_sae->batch n_inst d_in",
+            )
+            + self.b_dec
+        )
 
-        loss_rec = t.mean((h - h_rec)**2, dim=-1)
+        loss_rec = t.mean((h - h_rec) ** 2, dim=-1)
         loss_sparse = t.sum(t.abs(z), dim=-1)
 
-        loss_dict = {"L_reconstruction": loss_rec, 
-                     "L_sparsity": loss_sparse}
-        
+        loss_dict = {"L_reconstruction": loss_rec, "L_sparsity": loss_sparse}
+
         loss = loss_rec + loss_sparse * self.cfg.sparsity_coeff
 
         return loss_dict, loss, z, h_rec
-        
 
     def optimize(
         self,
@@ -206,11 +229,15 @@ class ToySAE(nn.Module):
         for step in progress_bar:
             # Resample dead latents
             if (resample_method is not None) and ((step + 1) % resample_freq == 0):
-                frac_active_in_window = t.stack(frac_active_list[-resample_window:], dim=0)
+                frac_active_in_window = t.stack(
+                    frac_active_list[-resample_window:], dim=0
+                )
                 if resample_method == "simple":
                     self.resample_simple(frac_active_in_window, resample_scale)
                 elif resample_method == "advanced":
-                    self.resample_advanced(frac_active_in_window, resample_scale, batch_size)
+                    self.resample_advanced(
+                        frac_active_in_window, resample_scale, batch_size
+                    )
 
             # Update learning rate
             step_lr = lr * lr_scale(step, steps)
@@ -244,16 +271,28 @@ class ToySAE(nn.Module):
                     **{k: v.mean(0).sum().item() for k, v in loss_dict.items()},  # type: ignore
                 )
                 with t.inference_mode():
-                    loss_dict, loss, acts, h_r = self.forward(h := self.generate_batch(hidden_sample_size))
+                    loss_dict, loss, acts, h_r = self.forward(
+                        h := self.generate_batch(hidden_sample_size)
+                    )
                 data_log.append(
                     {
                         "steps": step,
-                        "frac_active": (acts.abs() > 1e-8).float().mean(0).detach().cpu(),
+                        "frac_active": (acts.abs() > 1e-8)
+                        .float()
+                        .mean(0)
+                        .detach()
+                        .cpu(),
                         "loss": loss.detach().cpu(),
                         "h": h.detach().cpu(),
                         "h_r": h_r.detach().cpu(),
-                        **{name: param.detach().cpu() for name, param in self.named_parameters()},
-                        **{name: loss_term.detach().cpu() for name, loss_term in loss_dict.items()},
+                        **{
+                            name: param.detach().cpu()
+                            for name, param in self.named_parameters()
+                        },
+                        **{
+                            name: loss_term.detach().cpu()
+                            for name, loss_term in loss_dict.items()
+                        },
                     }
                 )
 
@@ -274,20 +313,19 @@ class ToySAE(nn.Module):
             - Set b_enc to be zero, at each dead neuron
         """
 
-        dead_lats_inst_idx, dead_lats_d_idx = t.where(t.sum(frac_active_in_window, dim=0) == 0)
+        dead_lats_inst_idx, dead_lats_d_idx = t.where(
+            t.sum(frac_active_in_window, dim=0) == 0
+        )
 
-        random_v = t.rand(dead_lats_inst_idx.shape[0], self.cfg.d_in, device=self._W_dec.device)
+        random_v = t.rand(
+            dead_lats_inst_idx.shape[0], self.cfg.d_in, device=self._W_dec.device
+        )
         random_v = random_v / t.norm(random_v, dim=-1)[:, t.newaxis]
 
         self._W_dec[dead_lats_inst_idx, dead_lats_d_idx, :] = random_v
         self.W_enc[dead_lats_inst_idx, :, dead_lats_d_idx] = random_v * resample_scale
 
         self.b_enc[dead_lats_inst_idx, dead_lats_d_idx] = 0
-
-
-
-
-        
 
     @t.no_grad()
     def resample_advanced(
@@ -306,7 +344,8 @@ class ToySAE(nn.Module):
             - Set b_enc to be zero, at each dead neuron
         """
         raise NotImplementedError()
-    
+
+
 # Go back up and edit your `ToySAE.__init__` method, then run the test below
 
 tests.test_sae_init(ToySAE)
@@ -360,7 +399,9 @@ utils.frac_active_line_plot(
     avg_window=20,
 )
 # %%
-resampling_sae = ToySAE(cfg=ToySAEConfig(n_inst=n_inst, d_in=d_in, d_sae=d_sae), model=model)
+resampling_sae = ToySAE(
+    cfg=ToySAEConfig(n_inst=n_inst, d_in=d_in, d_sae=d_sae), model=model
+)
 
 resampling_data_log = resampling_sae.optimize(steps=20_000, resample_method="simple")
 
@@ -382,6 +423,7 @@ utils.frac_active_line_plot(
 #################
 # Gated units
 
+
 class GatedToySAE(ToySAE):
     W_gate: Float[Tensor, "inst d_in d_sae"]
     b_gate: Float[Tensor, "inst d_sae"]
@@ -393,7 +435,9 @@ class GatedToySAE(ToySAE):
     def __init__(self, cfg: ToySAEConfig, model: ToyModel):
         super(ToySAE, self).__init__()
 
-        assert cfg.d_in == model.cfg.d_hidden, "ToyModel's hidden dim doesn't match SAE input dim"
+        assert (
+            cfg.d_in == model.cfg.d_hidden
+        ), "ToyModel's hidden dim doesn't match SAE input dim"
         self.cfg = cfg
         self.model = model.requires_grad_(False)
         self.model.W.data[1:] = self.model.W.data[0]
@@ -402,11 +446,15 @@ class GatedToySAE(ToySAE):
         self._W_dec = (
             None
             if self.cfg.tied_weights
-            else nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_sae, cfg.d_in))))
+            else nn.Parameter(
+                nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_sae, cfg.d_in)))
+            )
         )
         self.b_dec = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_in))
 
-        self.W_gate = nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_in, cfg.d_sae))))
+        self.W_gate = nn.Parameter(
+            nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_in, cfg.d_sae)))
+        )
         self.b_gate = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
         self.r_mag = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
         self.b_mag = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
@@ -437,13 +485,23 @@ class GatedToySAE(ToySAE):
 
         # Compute the gating terms (pi_gate(x) and f_gate(x) in the paper)
         gating_pre_activation = (
-            einops.einsum(h_cent, self.W_gate, "batch inst d_in, inst d_in d_sae -> batch inst d_sae") + self.b_gate
+            einops.einsum(
+                h_cent,
+                self.W_gate,
+                "batch inst d_in, inst d_in d_sae -> batch inst d_sae",
+            )
+            + self.b_gate
         )
         active_features = (gating_pre_activation > 0).float()
 
         # Compute the magnitude term (f_mag(x) in the paper)
         magnitude_pre_activation = (
-            einops.einsum(h_cent, self.W_mag, "batch inst d_in, inst d_in d_sae -> batch inst d_sae") + self.b_mag
+            einops.einsum(
+                h_cent,
+                self.W_mag,
+                "batch inst d_in, inst d_in d_sae -> batch inst d_sae",
+            )
+            + self.b_mag
         )
         feature_magnitudes = t.relu(magnitude_pre_activation)
 
@@ -452,14 +510,21 @@ class GatedToySAE(ToySAE):
 
         # Compute reconstructed input
         h_reconstructed = (
-            einops.einsum(acts_post, self.W_dec, "batch inst d_sae, inst d_sae d_in -> batch inst d_in") + self.b_dec
+            einops.einsum(
+                acts_post,
+                self.W_dec,
+                "batch inst d_sae, inst d_sae d_in -> batch inst d_in",
+            )
+            + self.b_dec
         )
 
         # Compute loss terms
         gating_post_activation = t.relu(gating_pre_activation)
         via_gate_reconstruction = (
             einops.einsum(
-                gating_post_activation, self.W_dec.detach(), "batch inst d_sae, inst d_sae d_in -> batch inst d_in"
+                gating_post_activation,
+                self.W_dec.detach(),
+                "batch inst d_sae, inst d_sae d_in -> batch inst d_in",
             )
             + self.b_dec.detach()
         )
@@ -469,23 +534,36 @@ class GatedToySAE(ToySAE):
             "L_aux": (via_gate_reconstruction - h).pow(2).sum(-1),
         }
 
-        loss = loss_dict["L_reconstruction"] + self.cfg.sparsity_coeff * loss_dict["L_sparsity"] + loss_dict["L_aux"]
+        loss = (
+            loss_dict["L_reconstruction"]
+            + self.cfg.sparsity_coeff * loss_dict["L_sparsity"]
+            + loss_dict["L_aux"]
+        )
 
         assert sorted(loss_dict.keys()) == ["L_aux", "L_reconstruction", "L_sparsity"]
         return loss_dict, loss, acts_post, h_reconstructed
 
     @t.no_grad()
-    def resample_simple(self, frac_active_in_window: Float[Tensor, "window inst d_sae"], resample_scale: float) -> None:
-        dead_latents_mask = (frac_active_in_window < 1e-8).all(dim=0)  # [instances d_sae]
+    def resample_simple(
+        self,
+        frac_active_in_window: Float[Tensor, "window inst d_sae"],
+        resample_scale: float,
+    ) -> None:
+        dead_latents_mask = (frac_active_in_window < 1e-8).all(
+            dim=0
+        )  # [instances d_sae]
         n_dead = int(dead_latents_mask.int().sum().item())
 
         replacement_values = t.randn((n_dead, self.cfg.d_in), device=self.W_gate.device)
         replacement_values_normed = replacement_values / (
-            replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+            replacement_values.norm(dim=-1, keepdim=True)
+            + self.cfg.weight_normalize_eps
         )
 
         # New names for weights & biases to resample
-        self.W_gate.data.transpose(-1, -2)[dead_latents_mask] = resample_scale * replacement_values_normed
+        self.W_gate.data.transpose(-1, -2)[dead_latents_mask] = (
+            resample_scale * replacement_values_normed
+        )
         self.W_dec.data[dead_latents_mask] = replacement_values_normed
         self.b_mag.data[dead_latents_mask] = 0.0
         self.b_gate.data[dead_latents_mask] = 0.0
@@ -493,7 +571,10 @@ class GatedToySAE(ToySAE):
 
     @t.no_grad()
     def resample_advanced(
-        self, frac_active_in_window: Float[Tensor, "window inst d_sae"], resample_scale: float, batch_size: int
+        self,
+        frac_active_in_window: Float[Tensor, "window inst d_sae"],
+        resample_scale: float,
+        batch_size: int,
     ) -> None:
         h = self.generate_batch(batch_size)
         l2_loss = self.forward(h)[0]["L_reconstruction"]
@@ -509,26 +590,37 @@ class GatedToySAE(ToySAE):
             if l2_loss_instance.max() < 1e-6:
                 continue
 
-            distn = t.distributions.Categorical(probs=l2_loss_instance.pow(2) / l2_loss_instance.pow(2).sum())
+            distn = t.distributions.Categorical(
+                probs=l2_loss_instance.pow(2) / l2_loss_instance.pow(2).sum()
+            )
             replacement_indices = distn.sample((n_dead,))  # type: ignore
 
-            replacement_values = (h - self.b_dec)[replacement_indices, instance]  # [n_dead d_in]
+            replacement_values = (h - self.b_dec)[
+                replacement_indices, instance
+            ]  # [n_dead d_in]
             replacement_values_normalized = replacement_values / (
-                replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+                replacement_values.norm(dim=-1, keepdim=True)
+                + self.cfg.weight_normalize_eps
             )
 
             W_gate_norm_alive_mean = (
-                self.W_gate[instance, :, ~is_dead].norm(dim=0).mean().item() if (~is_dead).any() else 1.0
+                self.W_gate[instance, :, ~is_dead].norm(dim=0).mean().item()
+                if (~is_dead).any()
+                else 1.0
             )
 
             # New names for weights & biases to resample
             self.W_dec.data[instance, dead_latents, :] = replacement_values_normalized
             self.W_gate.data[instance, :, dead_latents] = (
-                replacement_values_normalized.T * W_gate_norm_alive_mean * resample_scale
+                replacement_values_normalized.T
+                * W_gate_norm_alive_mean
+                * resample_scale
             )
             self.b_mag.data[instance, dead_latents] = 0.0
             self.b_gate.data[instance, dead_latents] = 0.0
             self.r_mag.data[instance, dead_latents] = 0.0
+
+
 # %%
 gated_sae = GatedToySAE(
     cfg=ToySAEConfig(
@@ -555,6 +647,8 @@ utils.animate_features_in_2d(
     color_resampled_latents=True,
     title="SAE on toy model",
 )
+
+
 # %%%
 class CustomFunction(t.autograd.Function):
     @staticmethod
@@ -581,6 +675,8 @@ output.backward()
 
 t.testing.assert_close(output, t.tensor(9.0))
 t.testing.assert_close(input.grad, t.tensor(6.0))
+
+
 # %%
 def rectangle(x: Tensor, width: float = 1.0) -> Tensor:
     """
@@ -613,7 +709,11 @@ class Heaviside(t.autograd.Function):
     @staticmethod
     def backward(ctx: Any, grad_output: t.Tensor) -> tuple[t.Tensor, t.Tensor, None]:
         z, theta = ctx.saved_tensors
-        return t.zeros(z.shape, device=z.device), - (1 / ctx.eps) * rectangle((z - theta) / ctx.eps) * grad_output, None
+        return (
+            t.zeros(z.shape, device=z.device),
+            -(1 / ctx.eps) * rectangle((z - theta) / ctx.eps) * grad_output,
+            None,
+        )
 
 
 # Test our Heaviside function, and its pseudo-gradient
@@ -621,11 +721,17 @@ z = t.tensor([[1.0, 1.4, 1.6, 2.0]], requires_grad=True)
 theta = t.tensor([1.5, 1.5, 1.5, 1.5], requires_grad=True)
 eps = 0.5
 output = Heaviside.apply(z, theta, eps)
-output.backward(t.ones_like(output))  # equiv to backprop on each of the 5 elements of z independently
+output.backward(
+    t.ones_like(output)
+)  # equiv to backprop on each of the 5 elements of z independently
 
 # Test values
-t.testing.assert_close(output, t.tensor([[0.0, 0.0, 1.0, 1.0]]))  # expect H(θ,z,ε) = 1[z > θ]
-t.testing.assert_close(theta.grad, t.tensor([0.0, -2.0, -2.0, 0.0]))  # expect dH/dθ = -1/ε * K((z-θ)/ε)
+t.testing.assert_close(
+    output, t.tensor([[0.0, 0.0, 1.0, 1.0]])
+)  # expect H(θ,z,ε) = 1[z > θ]
+t.testing.assert_close(
+    theta.grad, t.tensor([0.0, -2.0, -2.0, 0.0])
+)  # expect dH/dθ = -1/ε * K((z-θ)/ε)
 t.testing.assert_close(z.grad, t.tensor([[0.0, 0.0, 0.0, 0.0]]))  # expect dH/dz = zero
 # assert z.grad is None  # expect dH/dz = None
 
@@ -637,6 +743,7 @@ t.testing.assert_close(theta.grad, 2 * t.tensor([0.0, -2.0, -2.0, 0.0]))
 
 print("All tests for `Heaviside` passed!")
 # %%
+
 
 class JumpReLU(t.autograd.Function):
     """
@@ -663,9 +770,8 @@ class JumpReLU(t.autograd.Function):
     def backward(ctx: Any, grad_output: t.Tensor) -> tuple[t.Tensor, t.Tensor, None]:
         z, theta = ctx.saved_tensors
         dz = Heaviside.apply(z, theta, ctx.eps) * grad_output
-        dtheta = - (theta / ctx.eps) * rectangle((z - theta) / ctx.eps) * grad_output
+        dtheta = -(theta / ctx.eps) * rectangle((z - theta) / ctx.eps) * grad_output
         return dz, dtheta, None
-
 
 
 # Test our JumpReLU function, and its pseudo-gradient
@@ -674,12 +780,20 @@ theta = t.tensor([1.5, 1.5, 1.5, 1.5], requires_grad=True)
 eps = 0.5
 output = JumpReLU.apply(z, theta, eps)
 
-output.backward(t.ones_like(output))  # equiv to backprop on each of the 5 elements of z independently
+output.backward(
+    t.ones_like(output)
+)  # equiv to backprop on each of the 5 elements of z independently
 
 # Test values
-t.testing.assert_close(output, t.tensor([[0.0, 0.0, 1.6, 2.0]]))  # expect J(θ,z,ε) = z * 1[z > θ]
-t.testing.assert_close(theta.grad, t.tensor([0.0, -3.0, -3.0, 0.0]))  # expect dJ/dθ = -θ/ε * K((z-θ)/ε)
-t.testing.assert_close(z.grad, t.tensor([[0.0, 0.0, 1.0, 1.0]]))  # expect dJ/dz = 1[z > θ]
+t.testing.assert_close(
+    output, t.tensor([[0.0, 0.0, 1.6, 2.0]])
+)  # expect J(θ,z,ε) = z * 1[z > θ]
+t.testing.assert_close(
+    theta.grad, t.tensor([0.0, -3.0, -3.0, 0.0])
+)  # expect dJ/dθ = -θ/ε * K((z-θ)/ε)
+t.testing.assert_close(
+    z.grad, t.tensor([[0.0, 0.0, 1.0, 1.0]])
+)  # expect dJ/dz = 1[z > θ]
 
 print("All tests for `JumpReLU` passed!")
 
@@ -694,10 +808,13 @@ class JumpReLUToySAE(ToySAE):
     b_enc: Float[Tensor, "inst d_sae"]
     b_dec: Float[Tensor, "inst d_in"]
     log_theta: Float[Tensor, "inst d_sae"]
+
     def __init__(self, cfg: ToySAEConfig, model: ToyModel):
         super(ToySAE, self).__init__()
 
-        assert cfg.d_in == model.cfg.d_hidden, "ToyModel's hidden dim doesn't match SAE input dim"
+        assert (
+            cfg.d_in == model.cfg.d_hidden
+        ), "ToyModel's hidden dim doesn't match SAE input dim"
         self.cfg = cfg
         self.model = model.requires_grad_(False)
         self.model.W.data[1:] = self.model.W.data[0]
@@ -706,13 +823,19 @@ class JumpReLUToySAE(ToySAE):
         self._W_dec = (
             None
             if self.cfg.tied_weights
-            else nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_sae, cfg.d_in))))
+            else nn.Parameter(
+                nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_sae, cfg.d_in)))
+            )
         )
         self.b_dec = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_in))
 
-        self.W_enc = nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_in, cfg.d_sae))))
+        self.W_enc = nn.Parameter(
+            nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_in, cfg.d_sae)))
+        )
         self.b_enc = nn.Parameter(t.zeros(cfg.n_inst, cfg.d_sae))
-        self.log_theta = nn.Parameter(t.full((cfg.n_inst, cfg.d_sae), t.log(t.tensor(THETA_INIT))))
+        self.log_theta = nn.Parameter(
+            t.full((cfg.n_inst, cfg.d_sae), t.log(t.tensor(THETA_INIT)))
+        )
 
         self.to(device)
 
@@ -735,22 +858,37 @@ class JumpReLUToySAE(ToySAE):
         h_cent = h - self.b_dec
 
         acts_pre = (
-            einops.einsum(h_cent, self.W_enc, "batch inst d_in, inst d_in d_sae -> batch inst d_sae") + self.b_enc
+            einops.einsum(
+                h_cent,
+                self.W_enc,
+                "batch inst d_in, inst d_in d_sae -> batch inst d_sae",
+            )
+            + self.b_enc
         )
         # print(self.theta.mean(), self.theta.std(), self.theta.min(), self.theta.max())
         acts_relu = t.relu(acts_pre)
         acts_post = JumpReLU.apply(acts_relu, self.theta, self.cfg.ste_epsilon)
 
         h_reconstructed = (
-            einops.einsum(acts_post, self.W_dec, "batch inst d_sae, inst d_sae d_in -> batch inst d_in") + self.b_dec
+            einops.einsum(
+                acts_post,
+                self.W_dec,
+                "batch inst d_sae, inst d_sae d_in -> batch inst d_in",
+            )
+            + self.b_dec
         )
 
         loss_dict = {
             "L_reconstruction": (h_reconstructed - h).pow(2).mean(-1),
-            "L_sparsity": Heaviside.apply(acts_relu, self.theta, self.cfg.ste_epsilon).sum(-1),
+            "L_sparsity": Heaviside.apply(
+                acts_relu, self.theta, self.cfg.ste_epsilon
+            ).sum(-1),
         }
 
-        loss = loss_dict["L_reconstruction"] + self.cfg.sparsity_coeff * loss_dict["L_sparsity"]
+        loss = (
+            loss_dict["L_reconstruction"]
+            + self.cfg.sparsity_coeff * loss_dict["L_sparsity"]
+        )
 
         return loss_dict, loss, acts_post, h_reconstructed
 
@@ -760,23 +898,31 @@ class JumpReLUToySAE(ToySAE):
         frac_active_in_window: Float[Tensor, "window inst d_sae"],
         resample_scale: float,
     ) -> None:
-        dead_latents_mask = (frac_active_in_window < 1e-8).all(dim=0)  # [instances d_sae]
+        dead_latents_mask = (frac_active_in_window < 1e-8).all(
+            dim=0
+        )  # [instances d_sae]
         n_dead = int(dead_latents_mask.int().sum().item())
 
         replacement_values = t.randn((n_dead, self.cfg.d_in), device=self.W_enc.device)
         replacement_values_normed = replacement_values / (
-            replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+            replacement_values.norm(dim=-1, keepdim=True)
+            + self.cfg.weight_normalize_eps
         )
 
         # New names for weights & biases to resample
-        self.W_enc.data.transpose(-1, -2)[dead_latents_mask] = resample_scale * replacement_values_normed
+        self.W_enc.data.transpose(-1, -2)[dead_latents_mask] = (
+            resample_scale * replacement_values_normed
+        )
         self.W_dec.data[dead_latents_mask] = replacement_values_normed
         self.b_enc.data[dead_latents_mask] = 0.0
         self.log_theta.data[dead_latents_mask] = t.log(t.tensor(THETA_INIT))
 
     @t.no_grad()
     def resample_advanced(
-        self, frac_active_in_window: Float[Tensor, "window inst d_sae"], resample_scale: float, batch_size: int
+        self,
+        frac_active_in_window: Float[Tensor, "window inst d_sae"],
+        resample_scale: float,
+        batch_size: int,
     ) -> None:
         h = self.generate_batch(batch_size)
         l2_loss = self.forward(h)[0]["L_reconstruction"]
@@ -792,16 +938,23 @@ class JumpReLUToySAE(ToySAE):
             if l2_loss_instance.max() < 1e-6:
                 continue
 
-            distn = t.distributions.Categorical(probs=l2_loss_instance.pow(2) / l2_loss_instance.pow(2).sum())
+            distn = t.distributions.Categorical(
+                probs=l2_loss_instance.pow(2) / l2_loss_instance.pow(2).sum()
+            )
             replacement_indices = distn.sample((n_dead,))  # type: ignore
 
-            replacement_values = (h - self.b_dec)[replacement_indices, instance]  # [n_dead d_in]
+            replacement_values = (h - self.b_dec)[
+                replacement_indices, instance
+            ]  # [n_dead d_in]
             replacement_values_normalized = replacement_values / (
-                replacement_values.norm(dim=-1, keepdim=True) + self.cfg.weight_normalize_eps
+                replacement_values.norm(dim=-1, keepdim=True)
+                + self.cfg.weight_normalize_eps
             )
 
             W_enc_norm_alive_mean = (
-                self.W_enc[instance, :, ~is_dead].norm(dim=0).mean().item() if (~is_dead).any() else 1.0
+                self.W_enc[instance, :, ~is_dead].norm(dim=0).mean().item()
+                if (~is_dead).any()
+                else 1.0
             )
 
             # New names for weights & biases to resample
@@ -814,15 +967,21 @@ class JumpReLUToySAE(ToySAE):
 
 
 jumprelu_sae = JumpReLUToySAE(
-    cfg=ToySAEConfig(n_inst=n_inst, d_in=d_in, d_sae=d_sae, tied_weights=True, sparsity_coeff=0.1),
+    cfg=ToySAEConfig(
+        n_inst=n_inst, d_in=d_in, d_sae=d_sae, tied_weights=True, sparsity_coeff=0.1
+    ),
     model=model,
 )
-jumprelu_data_log = jumprelu_sae.optimize(steps=20_000, resample_method="advanced")  # batch_size=4096?
+jumprelu_data_log = jumprelu_sae.optimize(
+    steps=20_000, resample_method="advanced"
+)  # batch_size=4096?
 
 # Animate the best instances, ranked according to average loss near the end of training
 n_inst_to_plot = 4
 n_batches_for_eval = 10
-avg_loss = t.concat([d["loss"] for d in jumprelu_data_log[-n_batches_for_eval:]]).mean(0)
+avg_loss = t.concat([d["loss"] for d in jumprelu_data_log[-n_batches_for_eval:]]).mean(
+    0
+)
 best_instances = avg_loss.topk(n_inst_to_plot, largest=False).indices.tolist()
 # %%
 utils.animate_features_in_2d(

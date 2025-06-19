@@ -315,11 +315,13 @@ shuffledXs = X[idxs, :]
 shuffledYs = Y[idxs]
 
 Xtr, Ytr = shuffledXs[:n_train].to(device), shuffledYs[:n_train].to(device)
-Xdev, Ydev = shuffledXs[n_train : n_train + n_val].to(device), shuffledYs[
-    n_train : n_train + n_val
-].to(device)
-Xte, Yte = shuffledXs[n_train + n_val :].to(device), shuffledYs[n_train + n_val :].to(
-    device
+Xdev, Ydev = (
+    shuffledXs[n_train : n_train + n_val].to(device),
+    shuffledYs[n_train : n_train + n_val].to(device),
+)
+Xte, Yte = (
+    shuffledXs[n_train + n_val :].to(device),
+    shuffledYs[n_train + n_val :].to(device),
 )
 print(Xtr.shape, Xdev.shape, Xte.shape)
 # %%

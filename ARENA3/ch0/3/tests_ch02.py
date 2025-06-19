@@ -264,8 +264,9 @@ def test_maxpool2d_module(MaxPool2d, n_tests=20, tuples=False):
             )
             kernel_size = tuple(np.random.randint(1, 10, size=(2,)))
             kH, kW = kernel_size
-            padding = np.random.randint(0, 1 + kH // 2), np.random.randint(
-                0, 1 + kW // 2
+            padding = (
+                np.random.randint(0, 1 + kH // 2),
+                np.random.randint(0, 1 + kW // 2),
             )
         else:
             stride = None if np.random.random() < 0.5 else np.random.randint(1, 5)
@@ -555,11 +556,14 @@ def test_residual_block(ResidualBlock):
     ), f"Parameter count mismatch (when first_stride=1). Expected {ref_params}, got {user_params}."
     # Check forward function output is correct shape
     user_output = user_model(x)
-    assert user_output.shape == (
-        1,
-        3,
-        64,
-        64,
+    assert (
+        user_output.shape
+        == (
+            1,
+            3,
+            64,
+            64,
+        )
     ), f"Incorrect shape, expected (batch=1, out_feats=4, height=64, width=64), got {user_output.shape}"
     print("Passed all tests when first_stride=1")
 
@@ -572,11 +576,14 @@ def test_residual_block(ResidualBlock):
         user_params == ref_params
     ), f"Parameter count mismatch (when first_stride>1). Expected {ref_params}, got {user_params}."
     user_output = user_model(x)
-    assert user_output.shape == (
-        1,
-        4,
-        32,
-        32,
+    assert (
+        user_output.shape
+        == (
+            1,
+            4,
+            32,
+            32,
+        )
     ), f"Incorrect shape, expected (batch=1, out_feats=4, height/first_stride=32, width/first_stride=32), got {user_output.shape}"
     print("Passed all tests when first_stride>1")
 
@@ -603,11 +610,14 @@ def test_block_group(BlockGroup):
     ), "Parameter count mismatch (when n_blocks=2, first_stride=1)"
     # Check forward function output is correct shape
     user_output = user_model(x)
-    assert user_output.shape == (
-        1,
-        3,
-        64,
-        64,
+    assert (
+        user_output.shape
+        == (
+            1,
+            3,
+            64,
+            64,
+        )
     ), f"Incorrect shape, expected (batch=1, out_feats=4, height=64, width=64), got {user_output.shape}"
     print("Passed all tests when first_stride=1")
 
@@ -622,11 +632,14 @@ def test_block_group(BlockGroup):
         user_params == ref_params
     ), "Parameter count mismatch (when n_blocks=2, first_stride>1)"
     user_output = user_model(x)
-    assert user_output.shape == (
-        1,
-        4,
-        32,
-        32,
+    assert (
+        user_output.shape
+        == (
+            1,
+            4,
+            32,
+            32,
+        )
     ), f"Incorrect shape, expected (batch=1, out_feats=4, height/first_stride=32, width/first_stride=32), got {user_output.shape}"
     print("Passed all tests when first_stride>1")
 
@@ -641,11 +654,14 @@ def test_block_group(BlockGroup):
         user_params == ref_params
     ), "Parameter count mismatch (when n_blocks=5, first_stride>1)"
     user_output = user_model(x)
-    assert user_output.shape == (
-        1,
-        4,
-        32,
-        32,
+    assert (
+        user_output.shape
+        == (
+            1,
+            4,
+            32,
+            32,
+        )
     ), f"Incorrect shape, expected (batch=1, out_feats=4, height/first_stride=32, width/first_stride=32), got {user_output.shape}"
     print("Passed all tests when n_blocks>2")
 
@@ -657,8 +673,10 @@ def test_get_resnet_for_feature_extraction(get_resnet_for_feature_extraction):
 
     num_params = len(list(resnet.parameters()))
 
-    error_msg = "\nNote - make sure you've defined your resnet modules in the correct order (with the final linear layer last), \
+    error_msg = (
+        "\nNote - make sure you've defined your resnet modules in the correct order (with the final linear layer last), \
 otherwise this can cause issues for the test function."
+    )
 
     # Check all gradients are correct
     for i, (name, param) in enumerate(resnet.named_parameters()):

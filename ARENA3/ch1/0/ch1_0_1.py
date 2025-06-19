@@ -43,7 +43,9 @@ import tests as tests
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -347,7 +349,6 @@ class Unembed(nn.Module):
     def forward(
         self, normalized_resid_final: Float[Tensor, "batch position d_model"]
     ) -> Float[Tensor, "batch position d_vocab"]:
-
         return (
             einops.einsum(
                 normalized_resid_final,
@@ -568,7 +569,6 @@ class TransformerTrainer:
         inferences_list = []
         for epoch in range(self.args.epochs):
             for i, batch in enumerate(self.train_loader):
-
                 loss = self.training_step(batch)
                 progress_bar.update()
                 progress_bar.set_description(

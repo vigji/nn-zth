@@ -8,7 +8,13 @@ from torch import Tensor, nn
 from tqdm.auto import tqdm
 import numpy as np
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 
 def linear_lr(step, steps):
@@ -21,6 +27,7 @@ def constant_lr(*_):
 
 def cosine_decay_lr(step, steps):
     return np.cos(0.5 * np.pi * step / (steps - 1))
+
 
 @dataclass
 class ToyModelConfig:
@@ -54,12 +61,18 @@ class ToyModel(nn.Module):
 
         if isinstance(feature_probability, float):
             feature_probability = t.tensor(feature_probability)
-        self.feature_probability = feature_probability.to(device).broadcast_to((cfg.n_inst, cfg.n_features))
+        self.feature_probability = feature_probability.to(device).broadcast_to(
+            (cfg.n_inst, cfg.n_features)
+        )
         if isinstance(importance, float):
             importance = t.tensor(importance)
-        self.importance = importance.to(device).broadcast_to((cfg.n_inst, cfg.n_features))
+        self.importance = importance.to(device).broadcast_to(
+            (cfg.n_inst, cfg.n_features)
+        )
 
-        self.W = nn.Parameter(nn.init.xavier_normal_(t.empty((cfg.n_inst, cfg.d_hidden, cfg.n_features))))
+        self.W = nn.Parameter(
+            nn.init.xavier_normal_(t.empty((cfg.n_inst, cfg.d_hidden, cfg.n_features)))
+        )
         self.b_final = nn.Parameter(t.zeros((cfg.n_inst, cfg.n_features)))
         self.to(device)
 
@@ -72,9 +85,11 @@ class ToyModel(nn.Module):
             x -> ReLU(W.T @ W @ x + b_final)
         """
         h_input = einops.einsum(
-            self.W, features, "... inst d_hid d_feat, ... inst d_feat -> ... inst d_hid")
+            self.W, features, "... inst d_hid d_feat, ... inst d_feat -> ... inst d_hid"
+        )
         h_out = einops.einsum(
-            self.W, h_input, "... inst d_hid d_feat, ... inst d_hid -> ... inst d_feat")
+            self.W, h_input, "... inst d_hid d_feat, ... inst d_hid -> ... inst d_feat"
+        )
         return t.relu(h_out + self.b_final)
 
     # My first implementation:
@@ -88,7 +103,7 @@ class ToyModel(nn.Module):
     #         - Each feature is present with probability self.feature_probability,
     #         - For each present feature, its magnitude is sampled from a uniform distribution between 0 and 1.
     #     """
-        
+
     #     instances = self.cfg.n_inst
     #     features = self.cfg.n_features
     #     full_shape = batch_size, instances, features
@@ -136,7 +151,6 @@ class ToyModel(nn.Module):
         rme = einops.reduce(diff, "batch inst feats -> inst", "mean")
         return t.sum(rme)
 
-
     def optimize(
         self,
         batch_size: int = 1024,
@@ -170,7 +184,6 @@ class ToyModel(nn.Module):
             if step % log_freq == 0 or (step + 1 == steps):
                 progress_bar.set_postfix(loss=loss.item() / self.cfg.n_inst, lr=step_lr)
 
-
     def generate_correlated_features(
         self, batch_size: int, n_correlated_pairs: int
     ) -> Float[Tensor, "batch inst 2*n_correlated_pairs"]:
@@ -181,8 +194,12 @@ class ToyModel(nn.Module):
         assert t.all((self.feature_probability == self.feature_probability[:, [0]]))
         p = self.feature_probability[:, [0]]  # shape (n_inst, 1)
 
-        feat_mag = t.rand((batch_size, self.cfg.n_inst, 2 * n_correlated_pairs), device=self.W.device)
-        feat_set_seeds = t.rand((batch_size, self.cfg.n_inst, n_correlated_pairs), device=self.W.device)
+        feat_mag = t.rand(
+            (batch_size, self.cfg.n_inst, 2 * n_correlated_pairs), device=self.W.device
+        )
+        feat_set_seeds = t.rand(
+            (batch_size, self.cfg.n_inst, n_correlated_pairs), device=self.W.device
+        )
         feat_set_is_present = feat_set_seeds <= p
         feat_is_present = einops.repeat(
             feat_set_is_present,
@@ -190,7 +207,6 @@ class ToyModel(nn.Module):
             pair=2,
         )
         return t.where(feat_is_present, feat_mag, 0.0)
-
 
     def generate_anticorrelated_features(
         self, batch_size: int, n_anticorrelated_pairs: int
@@ -205,7 +221,10 @@ class ToyModel(nn.Module):
 
         assert p.max().item() <= 0.5, "For anticorrelated features, must have 2p < 1"
 
-        feat_mag = t.rand((batch_size, self.cfg.n_inst, 2 * n_anticorrelated_pairs), device=self.W.device)
+        feat_mag = t.rand(
+            (batch_size, self.cfg.n_inst, 2 * n_anticorrelated_pairs),
+            device=self.W.device,
+        )
         even_feat_seeds, odd_feat_seeds = t.rand(
             (2, batch_size, self.cfg.n_inst, n_anticorrelated_pairs),
             device=self.W.device,
@@ -218,8 +237,9 @@ class ToyModel(nn.Module):
         )
         return t.where(feat_is_present, feat_mag, 0.0)
 
-
-    def generate_uncorrelated_features(self, batch_size: int, n_uncorrelated: int) -> Tensor:
+    def generate_uncorrelated_features(
+        self, batch_size: int, n_uncorrelated: int
+    ) -> Tensor:
         """
         Generates a batch of uncorrelated features.
         """
@@ -235,6 +255,10 @@ class ToyModel(nn.Module):
             assert t.all((self.feature_probability == self.feature_probability[:, [0]]))
             p = self.feature_probability[:, [0]]  # shape (n_inst, 1)
 
-        feat_mag = t.rand((batch_size, self.cfg.n_inst, n_uncorrelated), device=self.W.device)
-        feat_seeds = t.rand((batch_size, self.cfg.n_inst, n_uncorrelated), device=self.W.device)
+        feat_mag = t.rand(
+            (batch_size, self.cfg.n_inst, n_uncorrelated), device=self.W.device
+        )
+        feat_seeds = t.rand(
+            (batch_size, self.cfg.n_inst, n_uncorrelated), device=self.W.device
+        )
         return t.where(feat_seeds <= p, feat_mag, 0.0)

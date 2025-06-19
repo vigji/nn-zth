@@ -11,7 +11,16 @@ from .ioi_dataset import IOIDataset
 
 CIRCUIT = {
     "name mover": [(9, 9), (10, 0), (9, 6)],
-    "backup name mover": [(10, 10), (10, 6), (10, 2), (10, 1), (11, 2), (9, 7), (9, 0), (11, 9)],
+    "backup name mover": [
+        (10, 10),
+        (10, 6),
+        (10, 2),
+        (10, 1),
+        (11, 2),
+        (9, 7),
+        (9, 0),
+        (11, 9),
+    ],
     "negative name mover": [(10, 7), (11, 10)],
     "s2 inhibition": [(7, 3), (7, 9), (8, 6), (8, 10)],
     "induction": [(5, 5), (5, 8), (5, 9), (6, 9)],
@@ -101,7 +110,9 @@ def hook_fn_mask_z(
         with the same template. This tells us what values to mask with.
     """
     # Get the mask for this layer, and add d_head=1 dimension so it broadcasts correctly
-    mask_for_this_layer = heads_and_posns_to_keep[hook.layer()].unsqueeze(-1).to(z.device)
+    mask_for_this_layer = (
+        heads_and_posns_to_keep[hook.layer()].unsqueeze(-1).to(z.device)
+    )
 
     # Set z values to the mean
     z = t.where(mask_for_this_layer, z, means[hook.layer()])
@@ -126,7 +137,9 @@ def compute_means_by_template(
     # Create tensor to store means
     n_layers, n_heads, d_head = model.cfg.n_layers, model.cfg.n_heads, model.cfg.d_head
     batch, seq_len = len(means_dataset), means_dataset.max_len
-    means = t.zeros(size=(n_layers, batch, seq_len, n_heads, d_head), device=model.cfg.device)
+    means = t.zeros(
+        size=(n_layers, batch, seq_len, n_heads, d_head), device=model.cfg.device
+    )
 
     # Get set of different templates for this data
     for layer in range(model.cfg.n_layers):
@@ -172,7 +185,9 @@ def add_mean_ablation_hook(
 
     # Get a hook function which will patch in the mean z values for each head, at
     # all positions which aren't important for the circuit
-    hook_fn = partial(hook_fn_mask_z, heads_and_posns_to_keep=heads_and_posns_to_keep, means=means)
+    hook_fn = partial(
+        hook_fn_mask_z, heads_and_posns_to_keep=heads_and_posns_to_keep, means=means
+    )
 
     # Apply hook
     model.add_hook(lambda name: name.endswith("z"), hook_fn, is_permanent=is_permanent)  # type: ignore

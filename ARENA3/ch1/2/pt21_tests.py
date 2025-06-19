@@ -21,14 +21,22 @@ def test_model(Model):
     # get actual
     model = Model(cfg)
     model_soln = solutions.ToyModel(cfg)
-    assert set(model.state_dict().keys()) == set(model_soln.state_dict().keys()), "Incorrect parameters."
+    assert set(model.state_dict().keys()) == set(
+        model_soln.state_dict().keys()
+    ), "Incorrect parameters."
     model.load_state_dict(model_soln.state_dict())
     batch = model_soln.generate_batch(10)
     out_actual = model(batch)
     out_expected = model_soln(batch)
-    assert out_actual.shape == out_expected.shape, f"Expected shape {out_expected.shape}, got {out_actual.shape}"
-    assert t.allclose(out_actual, F.relu(out_actual)), "Did you forget to apply the ReLU (or do it in the wrong order)?"
-    assert t.allclose(out_actual, out_expected), "Incorrect output when compared to solution."
+    assert (
+        out_actual.shape == out_expected.shape
+    ), f"Expected shape {out_expected.shape}, got {out_actual.shape}"
+    assert t.allclose(
+        out_actual, F.relu(out_actual)
+    ), "Did you forget to apply the ReLU (or do it in the wrong order)?"
+    assert t.allclose(
+        out_actual, out_expected
+    ), "Incorrect output when compared to solution."
     print("All tests in `test_model` passed!")
 
 
@@ -48,7 +56,9 @@ def test_generate_batch(Model):
         n_instances,
         n_features,
     ), f"Expected shape (500, 10, 5), got {batch.shape}"
-    assert t.allclose(batch, batch.clamp(0, 1)), "Not all elements of batch are in the [0, 1] range."
+    assert t.allclose(
+        batch, batch.clamp(0, 1)
+    ), "Not all elements of batch are in the [0, 1] range."
     feature_probability = (batch.abs() > 1e-5).float().mean((0, -1))
     diff = (feature_probability - model.feature_probability[:, 0]).abs().sum()
     assert diff < 0.05, "Incorrect feature_probability implementation."
@@ -70,7 +80,9 @@ def test_calculate_loss(Model):
     out = model(batch)
     expected_loss = model_soln.calculate_loss(out, batch)
     actual_loss = model.calculate_loss(out, batch)
-    t.testing.assert_close(expected_loss, actual_loss, msg="Failed test with trivial importances")
+    t.testing.assert_close(
+        expected_loss, actual_loss, msg="Failed test with trivial importances"
+    )
 
     # Now test with nontrivial importances
     importance = t.rand(instances, features)
@@ -80,7 +92,9 @@ def test_calculate_loss(Model):
     out = model(batch)
     expected_loss = model_soln.calculate_loss(out, batch)
     actual_loss = model.calculate_loss(out, batch)
-    t.testing.assert_close(expected_loss, actual_loss, msg="Failed test with nontrivial importances")
+    t.testing.assert_close(
+        expected_loss, actual_loss, msg="Failed test with nontrivial importances"
+    )
 
     print("All tests in `test_calculate_loss` passed!")
 
@@ -156,7 +170,9 @@ def test_compute_dimensionality(compute_dimensionality):
     print("All tests in `test_compute_dimensionality` passed!")
 
 
-def setup_sae(SAE, match_weights: bool = True, tied: bool = False, bias: bool = False) -> tuple["SAE", "SAE"]:
+def setup_sae(
+    SAE, match_weights: bool = True, tied: bool = False, bias: bool = False
+) -> tuple["SAE", "SAE"]:
     """
     This function works assuming your SAE has `W_enc` attribute, rather then `_W_enc`.
     The latter is used later on, when you have Gated models (because then we have
@@ -243,29 +259,45 @@ def test_sae_forward(SAE):
             else getattr(soln_sae, name)
         )
         t.testing.assert_close(
-            param, target_param, msg="Test failed which was expected to pass - please message errata on Slack"
+            param,
+            target_param,
+            msg="Test failed which was expected to pass - please message errata on Slack",
         )
 
     loss_dict, loss, acts, h_reconstructed = sae.forward(h)
-    loss_dict_expected, loss_expected, acts_expected, h_reconstructed_expected = soln_sae.forward(h)
-
-    # Check size of first one, to see if reduction is correct (will catch a lot of errors)
-    assert loss.shape == loss_expected.shape, (
-        "Shape mismatch (note, solutions recently changed so `loss` should now be returned as a tensor of shape (batch_size, n_instances) rather than a scalar)"
+    loss_dict_expected, loss_expected, acts_expected, h_reconstructed_expected = (
+        soln_sae.forward(h)
     )
 
-    L_recon_diff = (loss_dict["L_reconstruction"] - loss_dict_expected["L_reconstruction"]).abs().sum().item()
+    # Check size of first one, to see if reduction is correct (will catch a lot of errors)
+    assert (
+        loss.shape == loss_expected.shape
+    ), "Shape mismatch (note, solutions recently changed so `loss` should now be returned as a tensor of shape (batch_size, n_instances) rather than a scalar)"
+
+    L_recon_diff = (
+        (loss_dict["L_reconstruction"] - loss_dict_expected["L_reconstruction"])
+        .abs()
+        .sum()
+        .item()
+    )
     if L_recon_diff > 1e-4:
         # Test a specific failure mode which is quite common
         sae2 = copy.deepcopy(sae)
         sae2.W_dec.data = soln_sae.W_dec_normalized.data
         loss_dict_2 = sae2.forward(h)[0]
-        L_recon_diff_2 = (loss_dict_2["L_reconstruction"] - loss_dict_expected["L_reconstruction"]).abs().sum().item()
+        L_recon_diff_2 = (
+            (loss_dict_2["L_reconstruction"] - loss_dict_expected["L_reconstruction"])
+            .abs()
+            .sum()
+            .item()
+        )
         if L_recon_diff_2 < 1e-4:
             raise Exception(
                 "Incorrect values for loss_dict['L_reconstruction'] - did you forget to use `W_dec_normalized`?"
             )
-    t.testing.assert_close(loss_dict["L_reconstruction"], loss_dict_expected["L_reconstruction"])
+    t.testing.assert_close(
+        loss_dict["L_reconstruction"], loss_dict_expected["L_reconstruction"]
+    )
     t.testing.assert_close(loss_dict["L_sparsity"], loss_dict_expected["L_sparsity"])
     t.testing.assert_close(loss, loss_expected)
     t.testing.assert_close(acts, acts_expected)
@@ -283,7 +315,9 @@ def test_sae_W_dec_normalized(SAE):
     # Test dividing by zero
     sae.W_dec.data[:] = 0.0
     W_dec_normalized = sae.W_dec_normalized
-    assert W_dec_normalized.pow(2).sum() < 1e-6, "Failed: did you forget to add epsilon to the denominator?"
+    assert (
+        W_dec_normalized.pow(2).sum() < 1e-6
+    ), "Failed: did you forget to add epsilon to the denominator?"
 
     print("All tests in `test_sae_normalize_W_dec` passed!")
 
@@ -334,9 +368,9 @@ def test_resample_simple(SAE):
         old_W_dec[~features_are_dead],
         msg="W_dec weights incorrectly changed where latents are alive",
     )
-    assert ((new_W_dec[features_are_dead] - old_W_dec[features_are_dead]).abs() > 1e-6).float().mean() > 0.5, (
-        "W_dec weights not changed where latents are dead"
-    )
+    assert (
+        (new_W_dec[features_are_dead] - old_W_dec[features_are_dead]).abs() > 1e-6
+    ).float().mean() > 0.5, "W_dec weights not changed where latents are dead"
     t.testing.assert_close(
         new_W_dec[features_are_dead].norm(dim=-1),
         t.ones_like(new_W_dec[features_are_dead].norm(dim=-1)),
@@ -351,7 +385,8 @@ def test_resample_simple(SAE):
     )
     t.testing.assert_close(
         new_W_dec[features_are_dead],
-        new_W_enc[features_are_dead] / new_W_enc[features_are_dead].norm(dim=-1, keepdim=True),
+        new_W_enc[features_are_dead]
+        / new_W_enc[features_are_dead].norm(dim=-1, keepdim=True),
         msg="Resampled normalized W_enc weights don't match resampled W_dec weights",
     )
 
@@ -367,14 +402,15 @@ def test_resample_simple(SAE):
     print("All tests in `test_resample_simple` passed!")
 
 
-
 @t.no_grad()
 def test_resample_advanced(SAE):
     window = 5
     n_instances = 6
     n_hidden = d_in = 10
     n_features = d_sae = 30
-    dead_feature_prob = 0.5  # We need at least some alive and some dead, for every instance
+    dead_feature_prob = (
+        0.5  # We need at least some alive and some dead, for every instance
+    )
     batch_size = 100
 
     import pt21_solutions as solutions
@@ -411,7 +447,9 @@ def test_resample_advanced(SAE):
     new_b_enc = sae.b_enc.detach().clone()
 
     # Check that b_enc match where the neurons aren't dead, and b_enc is zero where they are
-    assert (new_b_enc[features_are_dead].abs() < 1e-8).all(), "b_enc not zero where neurons are dead"
+    assert (
+        new_b_enc[features_are_dead].abs() < 1e-8
+    ).all(), "b_enc not zero where neurons are dead"
     t.testing.assert_close(
         new_b_enc[~features_are_dead],
         old_b_enc[~features_are_dead],
@@ -428,9 +466,9 @@ def test_resample_advanced(SAE):
         old_W_dec[~features_are_dead],
         msg="W_dec weights incorrectly changed where neurons are alive",
     )
-    assert ((new_W_dec[features_are_dead] - old_W_dec[features_are_dead]).abs() > 1e-6).float().mean() > 0.0, (
-        "W_dec weights not changed where neurons are dead"
-    )
+    assert (
+        (new_W_dec[features_are_dead] - old_W_dec[features_are_dead]).abs() > 1e-6
+    ).float().mean() > 0.0, "W_dec weights not changed where neurons are dead"
     t.testing.assert_close(
         new_W_dec[features_are_dead].norm(dim=-1),
         t.ones_like(new_W_dec[features_are_dead].norm(dim=-1)),
@@ -447,11 +485,16 @@ def test_resample_advanced(SAE):
         msg="W_enc weights incorrectly changed where neurons are alive",
     )
     W_enc_alive_avg_norms = t.tensor(
-        [sae.W_enc[i, :, ~features_are_dead[i]].norm(dim=0).mean().item() for i in dead_instances]
+        [
+            sae.W_enc[i, :, ~features_are_dead[i]].norm(dim=0).mean().item()
+            for i in dead_instances
+        ]
     ).to(h.device)
 
     t.testing.assert_close(
-        neuron_resample_scale * W_enc_alive_avg_norms[:, None] * new_W_dec[features_are_dead],
+        neuron_resample_scale
+        * W_enc_alive_avg_norms[:, None]
+        * new_W_dec[features_are_dead],
         new_W_enc[features_are_dead],
         msg="Resampled & normalized W_enc weights don't match resampled W_dec weights",
     )
@@ -460,7 +503,9 @@ def test_resample_advanced(SAE):
     # Next, do this again when there are no dead neurons, and check it doesn't break
     frac_active_in_window_ones = t.ones((window, sae_cfg.n_inst, sae_cfg.d_sae))
     try:
-        sae.resample_advanced(frac_active_in_window_ones, neuron_resample_scale, batch_size)
+        sae.resample_advanced(
+            frac_active_in_window_ones, neuron_resample_scale, batch_size
+        )
     except:
         raise Exception(
             "Error running resample_advanced when no neurons are dead. Have you dealt with this case correctly?"
@@ -481,11 +526,19 @@ def test_resample_advanced(SAE):
     h_to_replace = h_large[dead_instances]
     h_to_replace_cent = h_to_replace - sae.b_dec[dead_instances]
     # Get the expected replacement values (one where you forget to center h)
-    resampled_data_expected = h_to_replace_cent / h_to_replace_cent.norm(dim=-1, keepdim=True)
-    resampled_data_expected_uncentered = h_to_replace / h_to_replace.norm(dim=-1, keepdim=True)
+    resampled_data_expected = h_to_replace_cent / h_to_replace_cent.norm(
+        dim=-1, keepdim=True
+    )
+    resampled_data_expected_uncentered = h_to_replace / h_to_replace.norm(
+        dim=-1, keepdim=True
+    )
     # Get the error, and figure out what case we're in: correct, forgot to normalize, or different error
-    error_from_correct_answer = (resampled_data - resampled_data_expected).abs().mean().item()
-    error_from_unnormalized_answer = (resampled_data - resampled_data_expected_uncentered).abs().mean().item()
+    error_from_correct_answer = (
+        (resampled_data - resampled_data_expected).abs().mean().item()
+    )
+    error_from_unnormalized_answer = (
+        (resampled_data - resampled_data_expected_uncentered).abs().mean().item()
+    )
 
     if error_from_correct_answer == 0:
         print("Passed distribution tests, to see if resampling was proportional to L2.")
@@ -513,7 +566,9 @@ def test_steering_hook(steering_hook, sae: SAE):
     assert result is not None, "Did you forget to return the tensor?"
     expected_result += steering_coefficient * sae.W_dec[latent_idx]
     expected_result_lastseq[:, -1] += steering_coefficient * sae.W_dec[latent_idx]
-    assert result.shape == expected_result.shape, f"Result shape {result.shape} != expected {expected_result.shape}"
+    assert (
+        result.shape == expected_result.shape
+    ), f"Result shape {result.shape} != expected {expected_result.shape}"
     diff = (result - expected_result).abs().max().item()
     diff_lastseq = (result - expected_result_lastseq).abs().max().item()
     if diff < 1e-5:
@@ -523,7 +578,9 @@ def test_steering_hook(steering_hook, sae: SAE):
             "Unexpected return from steering_hook function - did you only apply steering to the last sequence position?"
         )
     else:
-        raise ValueError(f"Unexpected return from steering_hook function: max diff from expected is {diff}")
+        raise ValueError(
+            f"Unexpected return from steering_hook function: max diff from expected is {diff}"
+        )
 
 
 def test_show_top_logits(show_top_logits, gpt2: HookedSAETransformer, gpt2_sae: SAE):
@@ -539,7 +596,9 @@ def test_show_top_logits(show_top_logits, gpt2: HookedSAETransformer, gpt2_sae: 
     print("All tests in `test_show_top_logits` passed!")
 
 
-def test_show_top_deembeddings(show_top_deembeddings, gpt2: HookedSAETransformer, gpt2_transcoder: SAE):
+def test_show_top_deembeddings(
+    show_top_deembeddings, gpt2: HookedSAETransformer, gpt2_transcoder: SAE
+):
     """
     We test by checking whether a couple of expected deembeddings are in the output.
     """
@@ -548,31 +607,43 @@ def test_show_top_deembeddings(show_top_deembeddings, gpt2: HookedSAETransformer
         show_top_deembeddings(gpt2, gpt2_transcoder, latent_idx)
         output = buf.getvalue()
     assert "liga" in output, "Expected 'liga' to be in output (ranked highest by value)"
-    assert "GAME" in output, "Expected 'GAME' to be in output (ranked second highest by value)"
-    assert "jee" in output, "Expected 'jee' to be in output (ranked third highest by value)"
+    assert (
+        "GAME" in output
+    ), "Expected 'GAME' to be in output (ranked second highest by value)"
+    assert (
+        "jee" in output
+    ), "Expected 'jee' to be in output (ranked third highest by value)"
     print("All tests in `test_show_top_deembeddings` passed!")
 
 
-def test_create_extended_embedding(create_extended_embedding, model: HookedSAETransformer):
+def test_create_extended_embedding(
+    create_extended_embedding, model: HookedSAETransformer
+):
     # Correct answer
     W_E = model.W_E.clone()[:, None, :]  # shape [batch=d_vocab, seq_len=1, d_model]
-    mlp_output = model.blocks[0].mlp(model.blocks[0].ln2(W_E))  # shape [batch=d_vocab, seq_len=1, d_model]
+    mlp_output = model.blocks[0].mlp(
+        model.blocks[0].ln2(W_E)
+    )  # shape [batch=d_vocab, seq_len=1, d_model]
     expected_unscaled = (W_E + mlp_output).squeeze()
-    expected = (expected_unscaled - expected_unscaled.mean(dim=-1, keepdim=True)) / expected_unscaled.std(
-        dim=-1, keepdim=True
-    )
+    expected = (
+        expected_unscaled - expected_unscaled.mean(dim=-1, keepdim=True)
+    ) / expected_unscaled.std(dim=-1, keepdim=True)
 
     # User's answer
     result = create_extended_embedding(model)
 
-    assert result.shape == expected.shape, f"Result shape {result.shape} != expected {expected.shape}"
+    assert (
+        result.shape == expected.shape
+    ), f"Result shape {result.shape} != expected {expected.shape}"
 
     diff = (result - expected).abs().max().item()
     diff_unscaled = (result - expected_unscaled).abs().max().item()
 
     if diff > 1e-4:
         if diff_unscaled < 1e-4:
-            raise ValueError(f"Max diff from correct answer is {diff}. Did you forget to center & scale?")
+            raise ValueError(
+                f"Max diff from correct answer is {diff}. Did you forget to center & scale?"
+            )
         else:
             raise ValueError(f"Max diff from correct answer is {diff}.")
 

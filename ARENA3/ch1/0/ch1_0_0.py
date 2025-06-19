@@ -43,7 +43,9 @@ import tests as tests
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -547,7 +549,6 @@ class Unembed(nn.Module):
     def forward(
         self, normalized_resid_final: Float[Tensor, "batch position d_model"]
     ) -> Float[Tensor, "batch position d_vocab"]:
-
         return (
             einops.einsum(
                 normalized_resid_final,

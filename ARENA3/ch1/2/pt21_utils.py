@@ -51,7 +51,9 @@ def plot_correlated_features(batch: Float[Tensor, "batch feats"], title: str):
             title=title,
             bargap=0.4,
             bargroupgap=0.0,
-            xaxis=dict(tickmode="array", tickvals=list(range(batch.squeeze().shape[0]))),
+            xaxis=dict(
+                tickmode="array", tickvals=list(range(batch.squeeze().shape[0]))
+            ),
             xaxis_title="Pairs of features",
             yaxis_title="Feature Values",
             height=400,
@@ -168,10 +170,14 @@ def plot_features_in_Nd(
         )
         imshow_data = WtW.numpy()
     else:
-        imshow_data = einops.rearrange(W, "instances hidden feats -> instances feats hidden").numpy()
+        imshow_data = einops.rearrange(
+            W, "instances hidden feats -> instances feats hidden"
+        ).numpy()
 
     # Get titles (if they exist). Make sure titles only apply to the bar chart in each row
-    titles = ["Heatmap of " + ("W" if neuron_plot else "W<sup>T</sup>W")] * n_instances + [
+    titles = [
+        "Heatmap of " + ("W" if neuron_plot else "W<sup>T</sup>W")
+    ] * n_instances + [
         "Neuron weights<br>stacked bar plot" if neuron_plot else "Feature norms"
     ] * n_instances  # , ||W<sub>i</sub>||
     if subplot_titles is not None:
@@ -276,7 +282,10 @@ def plot_features_in_Nd(
 
     else:
         # Add annotation of "features" on the y-axis of the bar plot
-        fig_indices = [str(i) if i != 1 else "" for i in range(n_instances + 1, 2 * n_instances + 1)]
+        fig_indices = [
+            str(i) if i != 1 else ""
+            for i in range(n_instances + 1, 2 * n_instances + 1)
+        ]
         for inst in range(n_instances):
             fig.add_annotation(
                 text="Features ➔",  # ➤→⮕🡒➜
@@ -345,7 +354,9 @@ def plot_features_in_Nd_discrete(
         "W<sub>2</sub>" for inst in range(n_instances)
     ]
 
-    fig = make_subplots(rows=2, cols=n_instances, subplot_titles=titles, vertical_spacing=0.1)
+    fig = make_subplots(
+        rows=2, cols=n_instances, subplot_titles=titles, vertical_spacing=0.1
+    )
     for inst in range(n_instances):
         for feat in range(n_feats):
             fig.add_trace(
@@ -458,7 +469,10 @@ def plot_features_in_2d(
             colors_list = []
             for i, colors_for_instance in enumerate(colors):
                 assert len(colors_for_instance) in (1, n_feats_list[i])
-                colors_list.append(colors_for_instance * (n_feats_list[i] if len(colors_for_instance) == 1 else 1))
+                colors_list.append(
+                    colors_for_instance
+                    * (n_feats_list[i] if len(colors_for_instance) == 1 else 1)
+                )
     elif isinstance(colors, Tensor):
         assert colors.shape == (n_instances, n_feats)
         colors_list = [[get_viridis(v) for v in color] for color in colors.tolist()]
@@ -468,10 +482,14 @@ def plot_features_in_2d(
     axs = np.broadcast_to(axs, (n_rows, n_cols))
 
     # If there are titles, add more spacing for them
-    fig.subplots_adjust(bottom=0.2, top=(0.8 if title else 0.9), left=0.1, right=0.9, hspace=0.5)
+    fig.subplots_adjust(
+        bottom=0.2, top=(0.8 if title else 0.9), left=0.1, right=0.9, hspace=0.5
+    )
 
     # Initialize lines and markers
-    for instance_idx, ((row, col), limits_per_instance) in enumerate(zip(row_col_tuples, limits_per_instance)):
+    for instance_idx, ((row, col), limits_per_instance) in enumerate(
+        zip(row_col_tuples, limits_per_instance)
+    ):
         # Get the right axis, and set the limits
         ax = axs[row, col]
         ax.set_xlim(-limits_per_instance, limits_per_instance)
@@ -523,7 +541,11 @@ def animate_features_in_2d(
 
     # TODO - maybe it's okay to specify "W_mag" when it doesn't already exist? Although kinda bad practice to have that here?
     # Check all the rows we're trying to plot are valid
-    invalid_rows = [row for row in rows if row not in ["W_enc", "W_gate", "W_mag", "_W_dec", "h", "h_r"]]
+    invalid_rows = [
+        row
+        for row in rows
+        if row not in ["W_enc", "W_gate", "W_mag", "_W_dec", "h", "h_r"]
+    ]
     assert len(invalid_rows) == 0, f"Invalid row specified: {invalid_rows}"
     all_rows = sorted(data_log[0].keys())
     missing_rows = [row for row in rows if row not in all_rows]
@@ -548,8 +570,12 @@ def animate_features_in_2d(
             tensor
             if row in ["W_enc", "W_gate", "W_mag"]
             else {
-                "h": lambda x: einops.rearrange(x, "batch inst d_in -> inst d_in batch"),
-                "h_r": lambda x: einops.rearrange(x, "batch inst d_in -> inst d_in batch"),
+                "h": lambda x: einops.rearrange(
+                    x, "batch inst d_in -> inst d_in batch"
+                ),
+                "h_r": lambda x: einops.rearrange(
+                    x, "batch inst d_in -> inst d_in batch"
+                ),
                 "_W_dec": lambda x: x.transpose(-1, -2),
             }[row](tensor)
         )
@@ -577,22 +603,35 @@ def animate_features_in_2d(
     present_row_types = sorted(set([get_row_type(r) for r in rows]))
 
     # Get a list of booleans corresponding to times we should highlight a weight in red (because it changed rapidly)
-    weight_diff = W_ts[1:, instances_list] - W_ts[:-1, instances_list]  # shape [ts-1 inst d_in d_sae]
-    weight_dist = np.pad(weight_diff.pow(2).sum(-2).sqrt().numpy(), ((1, 0), (0, 0), (0, 0)))  # shape [ts inst d_sae]
+    weight_diff = (
+        W_ts[1:, instances_list] - W_ts[:-1, instances_list]
+    )  # shape [ts-1 inst d_in d_sae]
+    weight_dist = np.pad(
+        weight_diff.pow(2).sum(-2).sqrt().numpy(), ((1, 0), (0, 0), (0, 0))
+    )  # shape [ts inst d_sae]
     df = pd.DataFrame(data=weight_dist.reshape(n_timesteps, -1))
     rolling_max_distances = (
-        df.rolling(window=n_steps_to_highlight, min_periods=1).max().values.reshape(weight_dist.shape)
+        df.rolling(window=n_steps_to_highlight, min_periods=1)
+        .max()
+        .values.reshape(weight_dist.shape)
     )
     true_highlight_threshold = highlight_threshold if color_resampled_latents else 100
     is_highlighted = rolling_max_distances > true_highlight_threshold
-    is_highlighted[: n_steps_to_highlight + 1, ...] = False  # don't highlight at start, shape [ts inst d_sae]
+    is_highlighted[: n_steps_to_highlight + 1, ...] = (
+        False  # don't highlight at start, shape [ts inst d_sae]
+    )
 
     # Populate row_data (this is data that's the same for all timesteps, and is specified for all plots within a row)
     batch_size_per_row = {}
     max_sizes = {}
     for row_type in present_row_types:
         all_data = t.concat(
-            [data_log[i][r].flatten() for i in range(n_timesteps) for r in rows if get_row_type(r) == row_type]
+            [
+                data_log[i][r].flatten()
+                for i in range(n_timesteps)
+                for r in rows
+                if get_row_type(r) == row_type
+            ]
         )
         nonzero_data = all_data[all_data.abs() > ZERO_THRESHOLD].abs()
         max_sizes[row_type] = float(nonzero_data.quantile(0.999).item()) * 1.4
@@ -604,7 +643,12 @@ def animate_features_in_2d(
             "line_width": 2 if batch_size_per_row[get_row_type(row)] < 25 else 1.5,
             "batch_size": batch_size_per_row[get_row_type(row)],
             "max_size": max_sizes[get_row_type(row)],
-            "tickmarks": list(range(-int(max_sizes[get_row_type(row)]), int(max_sizes[get_row_type(row)]) + 1)),
+            "tickmarks": list(
+                range(
+                    -int(max_sizes[get_row_type(row)]),
+                    int(max_sizes[get_row_type(row)]) + 1,
+                )
+            ),
         }
         for row in rows
     ]
@@ -617,21 +661,31 @@ def animate_features_in_2d(
             row_type = "W" if "W_" in row else "h"
 
             # data.shape = [inst 2 batch/d_sae], colors.shape = [inst batch/d_sae]
-            data = rearrange_fn(data_log_list[ts][row], row)[instances_list].numpy()  # shape [inst 2 batch]
+            data = rearrange_fn(data_log_list[ts][row], row)[
+                instances_list
+            ].numpy()  # shape [inst 2 batch]
             is_highlighted_all = t.from_numpy(
-                is_highlighted[ts] if "W_" in row else np.full((n_inst, data.shape[-1]), False)
+                is_highlighted[ts]
+                if "W_" in row
+                else np.full((n_inst, data.shape[-1]), False)
             ).tolist()
 
             # Get max reconstruction loss for this timestep, over all instances & models
             # all_L_recon = t.stack([data_log_list[ts][r] for r in h_row_types if "L_recon" in r]).sqrt()
             # L_recon_top = all_L_recon.flatten().topk(k=3).values[-1].item()
-            L_recon_top = t.stack([data_log_list[ts][r] for r in h_row_types if "L_recon" in r]).max().item()
+            L_recon_top = (
+                t.stack([data_log_list[ts][r] for r in h_row_types if "L_recon" in r])
+                .max()
+                .item()
+            )
             L_recon = data_log_list[ts]["L_reconstruction"].tolist()
 
             # Add data for each instance in this row
             for inst_idx in range(n_inst):
                 # We only add data that is non-zero, to save on file size
-                nonzero_values = np.nonzero(np.absolute(data[inst_idx]).sum(0) > ZERO_THRESHOLD)[0].tolist()
+                nonzero_values = np.nonzero(
+                    np.absolute(data[inst_idx]).sum(0) > ZERO_THRESHOLD
+                )[0].tolist()
                 x = [round(x, 4) for x in data[inst_idx, 0, nonzero_values].tolist()]
                 y = [round(y, 4) for y in data[inst_idx, 1, nonzero_values].tolist()]
                 data_list = []
@@ -640,8 +694,17 @@ def animate_features_in_2d(
                     if is_highlighted_all[inst_idx][nz]:
                         data_list[-1]["color"] = "red"
                     elif color_hidden_activations_by_loss and row_type == "h":
-                        data_list[-1]["color"] = round(L_recon[nz][inst_idx] / L_recon_top, 2)
-                plot_data.append({"timestep": ts, "row": row_idx, "inst": inst_idx, "data": data_list})
+                        data_list[-1]["color"] = round(
+                            L_recon[nz][inst_idx] / L_recon_top, 2
+                        )
+                plot_data.append(
+                    {
+                        "timestep": ts,
+                        "row": row_idx,
+                        "inst": inst_idx,
+                        "data": data_list,
+                    }
+                )
 
     # Get default (empty string) values for a bunch of javascript components
     play_button = ""
@@ -889,7 +952,11 @@ def frac_active_line_plot(
     avg_window: int | None = None,
 ):
     if avg_window is not None:
-        frac_active_df = pd.DataFrame(data=frac_active.flatten(1, -1)).rolling(window=avg_window).mean()
+        frac_active_df = (
+            pd.DataFrame(data=frac_active.flatten(1, -1))
+            .rolling(window=avg_window)
+            .mean()
+        )
         frac_active = t.from_numpy(frac_active_df.values).reshape(frac_active.shape)
 
     n_steps, n_instances, d_sae = frac_active.shape
@@ -940,7 +1007,9 @@ def frac_active_line_plot(
 def plot_feature_geometry(model: "Model", dim_fracs=None, filename: str | None = None):
     fig = px.line(
         x=1 / model.feature_probability[:, 0].cpu(),
-        y=(model.cfg.d_hidden / (t.linalg.matrix_norm(model.W.detach(), "fro") ** 2)).cpu(),
+        y=(
+            model.cfg.d_hidden / (t.linalg.matrix_norm(model.W.detach(), "fro") ** 2)
+        ).cpu(),
         log_x=True,
         markers=True,
         template="ggplot2",
@@ -984,7 +1053,8 @@ def plot_feature_geometry(model: "Model", dim_fracs=None, filename: str | None =
                 dx = xs[i + 1] - xs[i]
             fig.add_trace(
                 go.Scatter(
-                    x=1 / density[i] * np.ones(N) + dx * np.random.uniform(-0.1, 0.1, N),
+                    x=1 / density[i] * np.ones(N)
+                    + dx * np.random.uniform(-0.1, 0.1, N),
                     y=fracs_,
                     marker=dict(
                         color="black",
@@ -996,7 +1066,9 @@ def plot_feature_geometry(model: "Model", dim_fracs=None, filename: str | None =
             )
         fig.update_xaxes(showgrid=False)
         fig.update_yaxes(showgrid=False)
-        fig.update_layout(showlegend=False, yaxis_title_text="Dimensionality, or m/||W||_F^2")
+        fig.update_layout(
+            showlegend=False, yaxis_title_text="Dimensionality, or m/||W||_F^2"
+        )
     fig.show()
     if filename is not None:
         fig.write_html(filename)
@@ -1067,10 +1139,18 @@ def profile_pytorch_memory(namespace: dict, n_top: int = 10, filter_device: str 
             continue
 
     # Convert bytes to GB, sort by size & print
-    sorted_sizes = sorted(object_sizes.items(), key=lambda x: x[1][2], reverse=True)[:n_top]
-    table_data = [(name, obj_type, device, size) for name, (obj_type, device, size) in sorted_sizes]
+    sorted_sizes = sorted(object_sizes.items(), key=lambda x: x[1][2], reverse=True)[
+        :n_top
+    ]
+    table_data = [
+        (name, obj_type, device, size)
+        for name, (obj_type, device, size) in sorted_sizes
+    ]
     print(
         tabulate(
-            table_data, headers=["Name", "Object", "Device", "Size (GB)"], floatfmt=".2f", tablefmt="simple_outline"
+            table_data,
+            headers=["Name", "Object", "Device", "Size (GB)"],
+            floatfmt=".2f",
+            tablefmt="simple_outline",
         )
     )

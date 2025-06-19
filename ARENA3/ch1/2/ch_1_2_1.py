@@ -3,15 +3,21 @@ import torch as t
 from jaxtyping import Float
 from torch import Tensor, nn
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"
 section = "part31_superposition_and_saes"
-#vroot_dir = next(p for p in Path.cwd().parents if (p / chapter).exists())
-#exercises_dir = root_dir / chapter / "exercises"
+# vroot_dir = next(p for p in Path.cwd().parents if (p / chapter).exists())
+# exercises_dir = root_dir / chapter / "exercises"
 # section_dir = exercises_dir / section
-#if str(exercises_dir) not in sys.path:
+# if str(exercises_dir) not in sys.path:
 #    sys.path.append(str(exercises_dir))
 
 import pt21_tests as tests
@@ -22,13 +28,18 @@ MAIN = __name__ == "__main__"
 # %%
 from toy_model import ToyModel, ToyModelConfig
 
+
 class NeuronModel(ToyModel):
-    def forward(self, features: Float[Tensor, "... inst feats"]) -> Float[Tensor, "... inst feats"]:
+    def forward(
+        self, features: Float[Tensor, "... inst feats"]
+    ) -> Float[Tensor, "... inst feats"]:
         h_input = einops.einsum(
-            self.W, features, "... inst d_hid d_feat, ... inst d_feat -> ... inst d_hid")
+            self.W, features, "... inst d_hid d_feat, ... inst d_feat -> ... inst d_hid"
+        )
         nonlin_h = t.relu(h_input)
         h_out = einops.einsum(
-            self.W, nonlin_h, "... inst d_hid d_feat, ... inst d_hid -> ... inst d_feat")
+            self.W, nonlin_h, "... inst d_hid d_feat, ... inst d_hid -> ... inst d_feat"
+        )
         return t.relu(h_out + self.b_final)
 
 
@@ -60,6 +71,7 @@ utils.plot_features_in_Nd(
 # %%
 ## Computation in superposition
 
+
 class NeuronComputationModel(ToyModel):
     W1: Float[Tensor, "inst d_hidden feats"]
     W2: Float[Tensor, "inst feats d_hidden"]
@@ -77,13 +89,25 @@ class NeuronComputationModel(ToyModel):
 
         if isinstance(feature_probability, float):
             feature_probability = t.tensor(feature_probability)
-        self.feature_probability = feature_probability.to(device).broadcast_to((cfg.n_inst, cfg.n_features))
+        self.feature_probability = feature_probability.to(device).broadcast_to(
+            (cfg.n_inst, cfg.n_features)
+        )
         if isinstance(importance, float):
             importance = t.tensor(importance)
-        self.importance = importance.to(device).broadcast_to((cfg.n_inst, cfg.n_features))
+        self.importance = importance.to(device).broadcast_to(
+            (cfg.n_inst, cfg.n_features)
+        )
 
-        self.W1 = nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.d_hidden, cfg.n_features))))
-        self.W2 = nn.Parameter(nn.init.kaiming_uniform_(t.empty((cfg.n_inst, cfg.n_features, cfg.d_hidden))))
+        self.W1 = nn.Parameter(
+            nn.init.kaiming_uniform_(
+                t.empty((cfg.n_inst, cfg.d_hidden, cfg.n_features))
+            )
+        )
+        self.W2 = nn.Parameter(
+            nn.init.kaiming_uniform_(
+                t.empty((cfg.n_inst, cfg.n_features, cfg.d_hidden))
+            )
+        )
         self.b_final = nn.Parameter(t.zeros((cfg.n_inst, cfg.n_features)))
         self.to(device)
 
@@ -96,10 +120,16 @@ class NeuronComputationModel(ToyModel):
             x -> ReLU(W.T @ W @ x + b_final)
         """
         h_1 = einops.einsum(
-            self.W1, features, "... inst d_hid d_feat, ... inst d_feat -> ... inst d_hid")
+            self.W1,
+            features,
+            "... inst d_hid d_feat, ... inst d_feat -> ... inst d_hid",
+        )
         nonlin_h = t.relu(h_1)
         h_2 = einops.einsum(
-            self.W2, nonlin_h, "... inst d_feat d_hid, ... inst d_hid -> ... inst d_feat")
+            self.W2,
+            nonlin_h,
+            "... inst d_feat d_hid, ... inst d_hid -> ... inst d_feat",
+        )
         return t.relu(h_2 + self.b_final)
 
     # Solution with correlations:
@@ -111,7 +141,7 @@ class NeuronComputationModel(ToyModel):
         features = self.cfg.n_features
         full_shape = batch_size, instances, features
         features_extraction = t.rand(full_shape, device=self.W1.device)
-        features_mag = t.rand(full_shape, device=self.W1.device)*2 - 1
+        features_mag = t.rand(full_shape, device=self.W1.device) * 2 - 1
         batch = (features_extraction <= self.feature_probability) * features_mag
         return batch
 
@@ -178,6 +208,9 @@ utils.plot_features_in_Nd_discrete(
     W1=model.W1,
     W2=model.W2,
     title="Neuron computation model (colored discretely, by feature)",
-    legend_names=[f"I<sub>{i}</sub> = {importance.squeeze()[i]:.3f}" for i in range(cfg.n_features)],
+    legend_names=[
+        f"I<sub>{i}</sub> = {importance.squeeze()[i]:.3f}"
+        for i in range(cfg.n_features)
+    ],
 )
 # %%

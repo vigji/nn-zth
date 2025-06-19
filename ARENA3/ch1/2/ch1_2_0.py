@@ -17,15 +17,21 @@ from torch.distributions.categorical import Categorical
 from torch.nn import functional as F
 from tqdm.auto import tqdm
 
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"
 section = "part31_superposition_and_saes"
-#vroot_dir = next(p for p in Path.cwd().parents if (p / chapter).exists())
-#exercises_dir = root_dir / chapter / "exercises"
+# vroot_dir = next(p for p in Path.cwd().parents if (p / chapter).exists())
+# exercises_dir = root_dir / chapter / "exercises"
 # section_dir = exercises_dir / section
-#if str(exercises_dir) not in sys.path:
+# if str(exercises_dir) not in sys.path:
 #    sys.path.append(str(exercises_dir))
 
 import pt21_tests as tests
@@ -53,11 +59,9 @@ utils.plot_features_in_2d(
 from toy_model import ToyModel
 
 
-
 tests.test_model(ToyModel)
 tests.test_generate_batch(ToyModel)
 tests.test_calculate_loss(ToyModel)
-
 
 
 # %%
@@ -109,7 +113,9 @@ with t.inference_mode():
         "batch instances features, instances hidden features -> instances hidden batch",
     )
 
-utils.plot_features_in_2d(hidden, title="Hidden state representation of a random batch of data")
+utils.plot_features_in_2d(
+    hidden, title="Hidden state representation of a random batch of data"
+)
 
 # %%
 cfg = ToyModelConfig(n_inst=10, n_features=100, d_hidden=20)
@@ -148,25 +154,33 @@ utils.plot_features_in_Nd(
     subplot_titles=[f"Feature prob = {i:.3f}" for i in feature_probability],
 )
 # %%
-cfg = ToyModelConfig(n_inst=30, n_features=4, d_hidden=2, n_correlated_pairs=1, n_anticorrelated_pairs=1)
+cfg = ToyModelConfig(
+    n_inst=30, n_features=4, d_hidden=2, n_correlated_pairs=1, n_anticorrelated_pairs=1
+)
 
 feature_probability = 10 ** -t.linspace(0.5, 1, cfg.n_inst).to(device)
 
-model = ToyModel(cfg=cfg, device=device, feature_probability=feature_probability[:, None])
+model = ToyModel(
+    cfg=cfg, device=device, feature_probability=feature_probability[:, None]
+)
 
 # Generate a batch of 4 features: first 2 are correlated, second 2 are anticorrelated
 batch = model.generate_batch(batch_size=100_000)
 corr0, corr1, anticorr0, anticorr1 = batch.unbind(dim=-1)
 
-assert ((corr0 != 0) == (corr1 != 0)).all(), "Correlated features should be active together"
-assert ((corr0 != 0).float().mean(0) - feature_probability).abs().mean() < 0.002, (
-    "Each correlated feature should be active with probability `feature_probability`"
-)
+assert (
+    (corr0 != 0) == (corr1 != 0)
+).all(), "Correlated features should be active together"
+assert (
+    ((corr0 != 0).float().mean(0) - feature_probability).abs().mean() < 0.002
+), "Each correlated feature should be active with probability `feature_probability`"
 
-assert not ((anticorr0 != 0) & (anticorr1 != 0)).any(), "Anticorrelated features should never be active together"
-assert ((anticorr0 != 0).float().mean(0) - feature_probability).abs().mean() < 0.002, (
-    "Each anticorrelated feature should be active with probability `feature_probability`"
-)
+assert not (
+    (anticorr0 != 0) & (anticorr1 != 0)
+).any(), "Anticorrelated features should never be active together"
+assert (
+    ((anticorr0 != 0).float().mean(0) - feature_probability).abs().mean() < 0.002
+), "Each anticorrelated feature should be active with probability `feature_probability`"
 # %%
 # Generate a batch of 4 features: first 2 are correlated, second 2 are anticorrelated
 batch = model.generate_batch(batch_size=1)

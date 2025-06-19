@@ -50,7 +50,9 @@ from solutions_bonus_p2 import (
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 section_dir = Path(__file__).parent
@@ -558,7 +560,7 @@ class VAETrainer:
         img_pred, mean, logsigma = self.model(img)
         sigma = torch.exp(logsigma)
         # print(img_pred.shape, img.shape)
-        kl_loss = (((sigma**2 + mean**2 - 1) / 2 - logsigma)).mean() * self.args.beta_kl
+        kl_loss = ((sigma**2 + mean**2 - 1) / 2 - logsigma).mean() * self.args.beta_kl
         loss = self.loss_fun(img, img_pred) + kl_loss
         self.optimizer.zero_grad()
         loss.backward()
@@ -727,4 +729,3 @@ def visualise_input(
 
 
 visualise_input(trainer.model, small_dataset)
-

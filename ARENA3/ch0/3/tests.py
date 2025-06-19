@@ -523,7 +523,9 @@ def test_sweep_config(sweep_config):
         assert isinstance(v, dict), f"Values for parameter {k} should be a dictionary"
         if "values" in v:
             v["values"] = list(v["values"])
-        assert v in sweep_config_parameters_expected[k], f"Unexpected values for parameter {k}: {v}"  # type: ignore
+        assert (
+            v in sweep_config_parameters_expected[k]
+        ), f"Unexpected values for parameter {k}: {v}"  # type: ignore
 
     for k, v in sweep_config_parameters_expected.items():  # type: ignore
         assert k in sweep_config_parameters, f"Missing parameter in sweep config: {k}"

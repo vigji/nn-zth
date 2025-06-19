@@ -34,7 +34,9 @@ import tests as tests
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -264,7 +266,9 @@ if MAIN:
 
 if MAIN:
     str_tokens = reference_gpt2.to_str_tokens(reference_text)
-    html = cv.attention.attention_patterns(tokens=str_tokens, attention=cache["pattern", 0][0])  # type: ignore
+    html = cv.attention.attention_patterns(
+        tokens=str_tokens, attention=cache["pattern", 0][0]
+    )  # type: ignore
     display(html)
 
 # %%
@@ -288,7 +292,9 @@ class Attention(nn.Module):
         nn.init.normal_(self.W_K, std=self.cfg.init_range)
         nn.init.normal_(self.W_V, std=self.cfg.init_range)
         nn.init.normal_(self.W_O, std=self.cfg.init_range)
-        self.register_buffer("IGNORE", t.tensor(float("-inf"), device=device, dtype=t.float32))  # type: ignore
+        self.register_buffer(
+            "IGNORE", t.tensor(float("-inf"), device=device, dtype=t.float32)
+        )  # type: ignore
 
     def apply_causal_mask(
         self,
@@ -1454,7 +1460,9 @@ if MAIN:
     # Print all the best output
     for logprob_sum, text in final_logitsums_and_completions:
         avg_logprob_as_prob = (
-            t.tensor(logprob_sum / (len(tokenizer.encode(text)) - orig_len)).exp().item()  # type: ignore
+            t.tensor(logprob_sum / (len(tokenizer.encode(text)) - orig_len))
+            .exp()
+            .item()  # type: ignore
         )
         print(
             "=" * 25

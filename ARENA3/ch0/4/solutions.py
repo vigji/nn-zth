@@ -518,9 +518,9 @@ def topological_sort(node: Node, get_children: Callable) -> list[Node]:
     Should raise an error if the graph with `node` as root is not in fact acyclic.
     """
 
-    result: list[Node] = (
-        []
-    )  # stores the list of nodes to be returned (in reverse topological order)
+    result: list[
+        Node
+    ] = []  # stores the list of nodes to be returned (in reverse topological order)
     perm: set[Node] = (
         set()
     )  # same as `result`, but as a set (faster to check for membership)

@@ -43,7 +43,9 @@ import tests as tests
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -84,7 +86,6 @@ class LayerNorm(nn.Module):
     def forward(
         self, residual: Float[Tensor, "batch posn d_model"]
     ) -> Float[Tensor, "batch posn d_model"]:
-
         means = t.mean(residual, axis=-1, keepdim=True)
         vars = t.var(residual, axis=-1, keepdim=True, unbiased=False)
 
@@ -117,7 +118,6 @@ class PosEmbed(nn.Module):
     def forward(
         self, tokens: Int[Tensor, "batch position"]
     ) -> Float[Tensor, "batch position d_model"]:
-
         indices = t.stack([t.arange(tokens.shape[1]) for _ in range(tokens.shape[0])])
 
         return self.W_pos[indices, :]
@@ -341,7 +341,6 @@ class Unembed(nn.Module):
     def forward(
         self, normalized_resid_final: Float[Tensor, "batch position d_model"]
     ) -> Float[Tensor, "batch position d_vocab"]:
-
         return (
             einops.einsum(
                 normalized_resid_final,
@@ -533,7 +532,6 @@ class TransformerTrainer:
         inferences_list = []
         for epoch in range(self.args.epochs):
             for i, batch in enumerate(self.train_loader):
-
                 loss = self.training_step(batch)
                 progress_bar.update()
                 progress_bar.set_description(
@@ -775,7 +773,6 @@ class Beams:
         all_logprobs = all_logits.log_softmax(-1)
 
         for i in range(batch):
-
             top_k_log_probs, top_k_token_ids = all_logprobs[i, -1, :].topk(k, dim=-1)
 
             new_tokens[i * k : (i + 1) * k, :-1] = self.tokens[i, :]
@@ -916,9 +913,7 @@ def beam_search(
 
     tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(device)
 
-    final_logprobs_and_completions = (
-        []
-    )  # we add to this list as we get terminated beams
+    final_logprobs_and_completions = []  # we add to this list as we get terminated beams
     best_beams = Beams(
         self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens
     )  # start with just 1 beam

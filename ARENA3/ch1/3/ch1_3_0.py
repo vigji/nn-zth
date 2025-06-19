@@ -1,4 +1,3 @@
-
 # %%
 import re
 import sys
@@ -23,7 +22,13 @@ from transformer_lens.components import MLP, Embed, LayerNorm, Unembed
 from transformer_lens.hook_points import HookPoint
 
 t.set_grad_enabled(False)
-device = t.device("mps" if t.backends.mps.is_available() else "cuda" if t.cuda.is_available() else "cpu")
+device = t.device(
+    "mps"
+    if t.backends.mps.is_available()
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
+)
 
 # Make sure exercises are in the path
 chapter = "chapter1_transformer_interp"

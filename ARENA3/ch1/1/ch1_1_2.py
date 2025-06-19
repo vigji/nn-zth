@@ -27,7 +27,9 @@ from transformer_lens.hook_points import HookPoint
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 # Make sure exercises are in the path
@@ -150,7 +152,6 @@ log_probs = get_log_probs(rep_logits, rep_tokens).squeeze()
 def hook_function(
     attn_pattern: Float[Tensor, "batch heads seq_len seq_len"], hook: HookPoint
 ):  # -> Tensor["batch", "heads", "seq_len", "seq_len"]:
-
     # modify attn_pattern (can be inplace)
     return attn_pattern
 

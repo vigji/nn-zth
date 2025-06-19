@@ -49,8 +49,9 @@ n_val = int(dataset_size * 0.1)
 n_test = int(dataset_size * 0.1)
 
 Xtr, Ytr = X[:n_train].to(device), Y[:n_train].to(device)
-Xdev, Ydev = X[n_train : n_train + n_val].to(device), Y[n_train : n_train + n_val].to(
-    device
+Xdev, Ydev = (
+    X[n_train : n_train + n_val].to(device),
+    Y[n_train : n_train + n_val].to(device),
 )
 Xte, Yte = X[n_train + n_val :].to(device), Y[n_train + n_val :].to(device)
 # %%

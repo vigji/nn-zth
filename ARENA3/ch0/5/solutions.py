@@ -46,7 +46,9 @@ MAIN = __name__ == "__main__"
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda" if t.cuda.is_available() else "cpu"
+    else "cuda"
+    if t.cuda.is_available()
+    else "cpu"
 )
 
 # Controls which models are trained when file runs with MAIN=True
@@ -1100,7 +1102,9 @@ class DCGANTrainer:
         # Gradient descent step (with optional clipping)
         lossD.backward()
         if self.args.clip_grad_norm is not None:
-            nn.utils.clip_grad_norm_(self.model.netD.parameters(), self.args.clip_grad_norm)  # type: ignore
+            nn.utils.clip_grad_norm_(
+                self.model.netD.parameters(), self.args.clip_grad_norm
+            )  # type: ignore
         self.optD.step()
 
         return lossD
@@ -1124,7 +1128,9 @@ class DCGANTrainer:
         # Gradient descent step (with optional clipping)
         lossG.backward()
         if self.args.clip_grad_norm is not None:
-            nn.utils.clip_grad_norm_(self.model.netG.parameters(), self.args.clip_grad_norm)  # type: ignore
+            nn.utils.clip_grad_norm_(
+                self.model.netG.parameters(), self.args.clip_grad_norm
+            )  # type: ignore
         self.optG.step()
 
         return lossG
