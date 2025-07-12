@@ -1122,9 +1122,7 @@ def profile_pytorch_memory(namespace: dict, n_top: int = 10, filter_device: str 
             obj_type = (
                 type(obj).__name__
                 if isinstance(obj, t.nn.Module)
-                else f"Tensor {tuple(obj.shape)}"
-                if t.is_tensor(obj)
-                else None
+                else f"Tensor {tuple(obj.shape)}" if t.is_tensor(obj) else None
             )
             if obj_type is None:
                 continue

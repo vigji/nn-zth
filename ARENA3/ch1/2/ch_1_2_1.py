@@ -6,9 +6,7 @@ from torch import Tensor, nn
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 # Make sure exercises are in the path

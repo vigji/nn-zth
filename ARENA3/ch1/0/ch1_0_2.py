@@ -43,9 +43,7 @@ import tests as tests
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 MAIN = __name__ == "__main__"
@@ -913,7 +911,9 @@ def beam_search(
 
     tokens = self.tokenizer.encode(prompt, return_tensors="pt").to(device)
 
-    final_logprobs_and_completions = []  # we add to this list as we get terminated beams
+    final_logprobs_and_completions = (
+        []
+    )  # we add to this list as we get terminated beams
     best_beams = Beams(
         self.model, self.tokenizer, t.tensor([0.0]).to(device), tokens
     )  # start with just 1 beam

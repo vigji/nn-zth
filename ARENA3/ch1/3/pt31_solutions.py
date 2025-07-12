@@ -27,9 +27,7 @@ t.set_grad_enabled(False)
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 # Make sure exercises are in the path
@@ -1543,8 +1541,10 @@ if MAIN:
     )
     ioi_logits_minimal = model(ioi_dataset.toks)
 
-    print(f"""Average logit difference (IOI dataset, using entire model): {logits_to_ave_logit_diff_2(ioi_logits_original):.4f}
-    Average logit difference (IOI dataset, only using circuit): {logits_to_ave_logit_diff_2(ioi_logits_minimal):.4f}""")
+    print(
+        f"""Average logit difference (IOI dataset, using entire model): {logits_to_ave_logit_diff_2(ioi_logits_original):.4f}
+    Average logit difference (IOI dataset, only using circuit): {logits_to_ave_logit_diff_2(ioi_logits_minimal):.4f}"""
+    )
 
 # %%
 
@@ -1557,8 +1557,10 @@ if MAIN:
     )
     ioi_logits_minimal = model(ioi_dataset.toks)
 
-    print(f"""Average logit difference (IOI dataset, using entire model): {logits_to_ave_logit_diff_2(ioi_logits_original):.4f}
-    Average logit difference (IOI dataset, only using circuit): {logits_to_ave_logit_diff_2(ioi_logits_minimal):.4f}""")
+    print(
+        f"""Average logit difference (IOI dataset, using entire model): {logits_to_ave_logit_diff_2(ioi_logits_original):.4f}
+    Average logit difference (IOI dataset, only using circuit): {logits_to_ave_logit_diff_2(ioi_logits_minimal):.4f}"""
+    )
 
 # %%
 

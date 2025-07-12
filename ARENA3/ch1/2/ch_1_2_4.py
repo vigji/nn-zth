@@ -10,9 +10,7 @@ from IPython.display import HTML, display
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 import pt21_tests as tests
@@ -139,9 +137,7 @@ class ToySAE(nn.Module):
             x, self.model.W, "batch inst feat, inst hid feat -> batch inst hid"
         )
 
-    def forward(
-        self, h: Float[Tensor, "batch inst d_in"]
-    ) -> tuple[
+    def forward(self, h: Float[Tensor, "batch inst d_in"]) -> tuple[
         dict[str, Float[Tensor, "batch inst"]],
         Float[Tensor, "batch inst"],
         Float[Tensor, "batch inst d_sae"],
@@ -469,9 +465,7 @@ class GatedToySAE(ToySAE):
     def W_mag(self) -> Float[Tensor, "inst d_in d_sae"]:
         return self.r_mag.exp().unsqueeze(1) * self.W_gate
 
-    def forward(
-        self, h: Float[Tensor, "batch inst d_in"]
-    ) -> tuple[
+    def forward(self, h: Float[Tensor, "batch inst d_in"]) -> tuple[
         dict[str, Float[Tensor, "batch inst"]],
         Float[Tensor, ""],
         Float[Tensor, "batch inst d_sae"],
@@ -843,9 +837,7 @@ class JumpReLUToySAE(ToySAE):
     def theta(self) -> Float[Tensor, "inst d_sae"]:
         return self.log_theta.exp()
 
-    def forward(
-        self, h: Float[Tensor, "batch inst d_in"]
-    ) -> tuple[
+    def forward(self, h: Float[Tensor, "batch inst d_in"]) -> tuple[
         dict[str, Float[Tensor, "batch inst"]],
         Float[Tensor, ""],
         Float[Tensor, "batch inst d_sae"],

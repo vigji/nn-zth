@@ -22,9 +22,7 @@ from tqdm.auto import tqdm
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 # Make sure exercises are in the path
@@ -447,15 +445,15 @@ if MAIN:
         (corr0 != 0) == (corr1 != 0)
     ).all(), "Correlated features should be active together"
     assert (
-        ((corr0 != 0).float().mean(0) - feature_probability).abs().mean() < 0.002
-    ), "Each correlated feature should be active with probability `feature_probability`"
+        (corr0 != 0).float().mean(0) - feature_probability
+    ).abs().mean() < 0.002, "Each correlated feature should be active with probability `feature_probability`"
 
     assert not (
         (anticorr0 != 0) & (anticorr1 != 0)
     ).any(), "Anticorrelated features should never be active together"
     assert (
-        ((anticorr0 != 0).float().mean(0) - feature_probability).abs().mean() < 0.002
-    ), "Each anticorrelated feature should be active with probability `feature_probability`"
+        (anticorr0 != 0).float().mean(0) - feature_probability
+    ).abs().mean() < 0.002, "Each anticorrelated feature should be active with probability `feature_probability`"
 
 # %%
 
@@ -1139,9 +1137,7 @@ class ToySAE(nn.Module):
         # You'll fill this in later
         raise NotImplementedError()
 
-    def forward(
-        self, h: Float[Tensor, "batch inst d_in"]
-    ) -> tuple[
+    def forward(self, h: Float[Tensor, "batch inst d_in"]) -> tuple[
         dict[str, Float[Tensor, "batch inst"]],
         Float[Tensor, "batch inst"],
         Float[Tensor, "batch inst d_sae"],
@@ -1383,9 +1379,7 @@ if MAIN:
 # %%
 
 
-def forward(
-    self: ToySAE, h: Float[Tensor, "batch inst d_in"]
-) -> tuple[
+def forward(self: ToySAE, h: Float[Tensor, "batch inst d_in"]) -> tuple[
     dict[str, Float[Tensor, "batch inst"]],
     Float[Tensor, "batch inst"],
     Float[Tensor, "batch inst d_sae"],
@@ -1688,9 +1682,7 @@ class GatedToySAE(ToySAE):
     def W_mag(self) -> Float[Tensor, "inst d_in d_sae"]:
         return self.r_mag.exp().unsqueeze(1) * self.W_gate
 
-    def forward(
-        self, h: Float[Tensor, "batch inst d_in"]
-    ) -> tuple[
+    def forward(self, h: Float[Tensor, "batch inst d_in"]) -> tuple[
         dict[str, Float[Tensor, "batch inst"]],
         Float[Tensor, ""],
         Float[Tensor, "batch inst d_sae"],
@@ -2240,9 +2232,7 @@ class JumpReLUToySAE(ToySAE):
     def theta(self) -> Float[Tensor, "inst d_sae"]:
         return self.log_theta.exp()
 
-    def forward(
-        self, h: Float[Tensor, "batch inst d_in"]
-    ) -> tuple[
+    def forward(self, h: Float[Tensor, "batch inst d_in"]) -> tuple[
         dict[str, Float[Tensor, "batch inst"]],
         Float[Tensor, ""],
         Float[Tensor, "batch inst d_sae"],

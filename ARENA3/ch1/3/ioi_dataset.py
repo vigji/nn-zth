@@ -690,9 +690,9 @@ class IOIDataset:
             N=self.N,
             tokenizer=self.tokenizer,
             prompts=self.ioi_prompts.copy(),
-            prefixes=self.prefixes.copy()
-            if self.prefixes is not None
-            else self.prefixes,
+            prefixes=(
+                self.prefixes.copy() if self.prefixes is not None else self.prefixes
+            ),
         )
         return copy_ioi_dataset
 

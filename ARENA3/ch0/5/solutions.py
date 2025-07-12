@@ -46,9 +46,7 @@ MAIN = __name__ == "__main__"
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 # Controls which models are trained when file runs with MAIN=True

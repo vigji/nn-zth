@@ -50,9 +50,7 @@ from solutions_bonus_p2 import (
 device = t.device(
     "mps"
     if t.backends.mps.is_available()
-    else "cuda"
-    if t.cuda.is_available()
-    else "cpu"
+    else "cuda" if t.cuda.is_available() else "cpu"
 )
 
 section_dir = Path(__file__).parent
