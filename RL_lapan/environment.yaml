@@ -1,0 +1,27 @@
+# lapan-env.yml
+name: lapan-env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy<2
+  - moviepy=1.0.3
+  - gymnasium[atari]=0.29.1
+  - gymnasium[classic-control]=0.29.1
+  - gymnasium[accept-rom-license]=0.29.1
+  - pytorch-ignite=0.5.1
+  - tensorboard=2.18.0
+  - mypy=1.8.0
+  - stable-baselines3=2.3.2
+  - pytest
+  - pip
+  - pip:
+    # Pull latest 2.x series of PyTorch (≥2.7.1,<3.0) with macOS MPS support from PyPI
+    - "torch>=2.7.1,<3.0"             # latest: 2.7.1 (released Jun 4, 2025) :contentReference[oaicite:0]{index=0}  
+    - "torchvision>=0.22.1,<0.23"     # latest: 0.22.1 (released Jun 4, 2025) :contentReference[oaicite:1]{index=1}
+    - ptan=0.8.1
+    - torchrl=0.6.0
+    - ray[tune]=2.37.0
+    - opencv-python=4.10.0.84
+
