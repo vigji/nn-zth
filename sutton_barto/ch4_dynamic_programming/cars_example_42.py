@@ -52,6 +52,7 @@ def trans_prob(state, action, location, max_n):
 
     # final probabilities:
     for n in range(max_n + 1):
+        
 
     return probs_rent, probs_returned
 
