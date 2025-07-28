@@ -36,18 +36,3 @@ class RandomActionWrapper(gym.ActionWrapper):
         return action
     
 
-if __name__ == "__main__":
-    env = RandomActionWrapper(gym.make("CartPole-v1", render_mode="rgb_array"))
-    env = gym.wrappers.RecordVideo(env, video_folder="/Users/vigji/Desktop")
-
-    obs = env.reset()
-    total_reward = 0.
-
-    while True:
-        obs, r, done, truncated, _ = env.step(0)
-        total_reward += r
-        if done or truncated:
-            break
-
-    print("Total reward: ", total_reward)
-    env.close()
