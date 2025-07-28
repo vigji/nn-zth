@@ -10,6 +10,7 @@ dependencies:
   - gymnasium[atari]=0.29.1
   - gymnasium[classic-control]=0.29.1
   - gymnasium[accept-rom-license]=0.29.1
+  - gymnasium[box2d]=0.29.1
   - pytorch-ignite=0.5.1
   - tensorboard=2.18.0
   - mypy=1.8.0
@@ -26,5 +27,6 @@ dependencies:
     - "torchrl==0.6.0"
     - "ray[tune]==2.37.0"
     - "opencv-python==4.10.0.84"
-    - "tensorboardX"
+    - tensorboardX
+    - pygame"
 
