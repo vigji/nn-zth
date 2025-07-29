@@ -1,5 +1,6 @@
 import gymnasium as gym
 import os
+
 os.environ["IMAGEIO_FFMPEG_EXE"] = "/opt/homebrew/bin/ffmpeg"
 
 
@@ -11,7 +12,6 @@ if __name__ == "__main__":
     total_reward = 0.0
     total_steps = 0
     obs = env.reset()
-    
 
     while True:
         action = env.action_space.sample()
@@ -21,5 +21,7 @@ if __name__ == "__main__":
         if done:
             break
 
-    print(f"=======Episode done in {total_steps} steps, total reward {total_reward:.2f}")
+    print(
+        f"=======Episode done in {total_steps} steps, total reward {total_reward:.2f}"
+    )
     env.close()

@@ -34,5 +34,3 @@ class RandomActionWrapper(gym.ActionWrapper):
             print(f"Random action {action}")
 
         return action
-    
-

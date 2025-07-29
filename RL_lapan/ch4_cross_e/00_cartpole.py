@@ -1,5 +1,5 @@
 from pickletools import optimize
-import gymnasium as gym 
+import gymnasium as gym
 import numpy as np
 import typing as tt
 import torch
@@ -9,6 +9,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 
 import os
+
 os.environ["IMAGEIO_FFMPEG_EXE"] = "/opt/homebrew/bin/ffmpeg"
 
 
@@ -21,19 +22,21 @@ class Net(nn.Module):
     def __init__(self, obs_size, hidden_size, n_actions, **kwargs):
         super().__init__(**kwargs)
 
-        self.pipe = nn.Sequential(nn.Linear(obs_size, hidden_size),
-                                  nn.ReLU(),
-                                  nn.Linear(hidden_size, n_actions))
+        self.pipe = nn.Sequential(
+            nn.Linear(obs_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, n_actions),
+        )
 
-    def forward(self, x:torch.Tensor):
+    def forward(self, x: torch.Tensor):
         return self.pipe(x)
-    
-    
+
 
 @dataclass
 class EpisodeStep:
     observation: np.array
     action: int
+
 
 @dataclass
 class Episode:
@@ -41,9 +44,11 @@ class Episode:
     steps: tt.List[EpisodeStep]
 
 
-def iterate_batches(env: gym.Env, net: Net, batch_size: int) -> tt.Generator[tt.List[Episode], None, None]:
+def iterate_batches(
+    env: gym.Env, net: Net, batch_size: int
+) -> tt.Generator[tt.List[Episode], None, None]:
     batch = []
-    episode_reward = 0.
+    episode_reward = 0.0
     episodes_list = []
     obs, _ = env.reset()
     sm = nn.Softmax(dim=1)
@@ -63,7 +68,6 @@ def iterate_batches(env: gym.Env, net: Net, batch_size: int) -> tt.Generator[tt.
         step_log = EpisodeStep(observation=obs_v, action=action)
 
         episodes_list.append(step_log)
-        
 
         if is_done or is_trunc:
             new_episode = Episode(reward=episode_reward, steps=episodes_list)
@@ -81,7 +85,9 @@ def iterate_batches(env: gym.Env, net: Net, batch_size: int) -> tt.Generator[tt.
         obs = next_obs
 
 
-def filter_batch(batch: tt.List[Episode], percentile: float) -> tt.Tuple[torch.FloatTensor, torch.LongTensor, float, float]:
+def filter_batch(
+    batch: tt.List[Episode], percentile: float
+) -> tt.Tuple[torch.FloatTensor, torch.LongTensor, float, float]:
     rewards = list(map(lambda x: x.reward, batch))
     reward_bound = np.percentile(rewards, percentile)
     reward_mean = np.mean(rewards)
@@ -93,7 +99,6 @@ def filter_batch(batch: tt.List[Episode], percentile: float) -> tt.Tuple[torch.F
         if episode.reward >= reward_bound:
             train_obs.extend(map(lambda x: x.observation, episode.steps))
             train_act.extend(map(lambda x: x.action, episode.steps))
-
 
     train_obs_v = torch.FloatTensor(np.vstack(train_obs))
     train_act_v = torch.LongTensor(train_act)
@@ -108,9 +113,8 @@ if __name__ == "__main__":
     obs_space_shape = env.observation_space.shape[0]
     n_actions = int(env.action_space.n)
 
-    net = Net(obs_size=obs_space_shape, n_actions=n_actions,
-              hidden_size=HIDDEN_SIZE)
-    
+    net = Net(obs_size=obs_space_shape, n_actions=n_actions, hidden_size=HIDDEN_SIZE)
+
     objective = nn.CrossEntropyLoss()
     optimizer = optim.Adam(params=net.parameters(), lr=0.01)
 
@@ -125,7 +129,9 @@ if __name__ == "__main__":
         loss_v.backward()
         optimizer.step()
 
-        print(f"{iter_n}: loss: {loss_v:.3f}, rw_mean:{reward_m:.1f}, rw_bound:{reward_b:.1f}")
+        print(
+            f"{iter_n}: loss: {loss_v:.3f}, rw_mean:{reward_m:.1f}, rw_bound:{reward_b:.1f}"
+        )
         writer.add_scalar("loss", loss_v.item(), iter_n)
         writer.add_scalar("reward_b", reward_b, iter_n)
         writer.add_scalar("reward_m", reward_m, iter_n)
@@ -135,4 +141,3 @@ if __name__ == "__main__":
             break
 
     writer.close()
-
