@@ -5,7 +5,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from pprint import pprint
 
 
-ENV_NAME = "FrozenLake-v1"
+ENV_NAME = "FrozenLake8x8-v1" # "FrozenLake-v1"
 GAMMA = 0.9
 TEST_EPISODES = 20
 
